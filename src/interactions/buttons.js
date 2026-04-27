@@ -1,6 +1,6 @@
 import { MessageFlags } from 'discord.js';
 import { peekQueue } from '../lib/queue-manager.js';
-import { queueListEmbed } from '../lib/embeds.js';
+import { nowPlayingEmbed, queueListEmbed, stoppedEmbed, controlsRow } from '../lib/embeds.js';
 
 export async function handleMusicButton(interaction) {
   const [, action] = interaction.customId.split(':');
@@ -17,12 +17,18 @@ export async function handleMusicButton(interaction) {
 
   switch (action) {
     case 'pause': {
-      const ok = q.pause();
-      return ephemeral(ok ? '⏸ Paused.' : 'Could not pause.');
+      if (!q.pause()) return ephemeral('Could not pause.');
+      return interaction.update({
+        embeds: [nowPlayingEmbed(q.current, { paused: true })],
+        components: [controlsRow({ paused: true })],
+      });
     }
     case 'resume': {
-      const ok = q.resume();
-      return ephemeral(ok ? '▶ Resumed.' : 'Could not resume.');
+      if (!q.resume()) return ephemeral('Could not resume.');
+      return interaction.update({
+        embeds: [nowPlayingEmbed(q.current)],
+        components: [controlsRow()],
+      });
     }
     case 'skip': {
       const title = q.current.title;
@@ -31,7 +37,7 @@ export async function handleMusicButton(interaction) {
     }
     case 'stop': {
       q.stop();
-      return ephemeral('⏹ Stopped.');
+      return interaction.update({ embeds: [stoppedEmbed()], components: [] });
     }
     default:
       return ephemeral(`Unknown action: ${action}`);

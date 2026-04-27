@@ -46,7 +46,7 @@ class GuildQueue {
   }
 
   async start() {
-    if (!this.current) await this.#playNext();
+    if (!this.current) await this.#playNext({ notify: false });
   }
 
   skip() {
@@ -86,10 +86,10 @@ class GuildQueue {
       this.#cleanup();
       return;
     }
-    await this.#playNext();
+    await this.#playNext({ notify: true });
   }
 
-  async #playNext() {
+  async #playNext({ notify = true } = {}) {
     const next = this.tracks.shift();
     if (!next) return;
     this.current = next;
@@ -116,7 +116,7 @@ class GuildQueue {
     const resource = createAudioResource(ytProcess.stdout, { inputType: StreamType.Arbitrary });
     this.player.play(resource);
 
-    if (this.textChannel) {
+    if (notify && this.textChannel) {
       this.textChannel
         .send({ embeds: [nowPlayingEmbed(next)], components: [controlsRow()] })
         .catch(() => {});
