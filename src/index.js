@@ -1,7 +1,5 @@
 import 'dotenv/config';
 import { Client, Collection, GatewayIntentBits, Events, MessageFlags } from 'discord.js';
-import { Player } from 'discord-player';
-import { YoutubeiExtractor } from 'discord-player-youtubei';
 import { readdir } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -10,11 +8,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
-});
-
-const player = new Player(client);
-await player.extractors.register(YoutubeiExtractor, {
-  streamOptions: { useClient: 'IOS' },
 });
 
 client.commands = new Collection();
