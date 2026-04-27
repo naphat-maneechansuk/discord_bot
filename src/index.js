@@ -13,7 +13,9 @@ const client = new Client({
 });
 
 const player = new Player(client);
-await player.extractors.register(YoutubeiExtractor, {});
+await player.extractors.register(YoutubeiExtractor, {
+  streamOptions: { useClient: 'IOS' },
+});
 
 client.commands = new Collection();
 const commandsDir = join(__dirname, 'commands');
