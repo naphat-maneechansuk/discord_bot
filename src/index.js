@@ -6,11 +6,16 @@ import { dirname, join } from 'node:path';
 import { startWebServer } from './web/server.js';
 import { handleMusicButton } from './interactions/buttons.js';
 import { handleMusicSelect } from './interactions/menus.js';
+import { peekQueue } from './lib/queue-manager.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMessages,
+  ],
 });
 
 client.commands = new Collection();
@@ -48,6 +53,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.replied || interaction.deferred) await interaction.followUp(reply).catch(() => {});
     else await interaction.reply(reply).catch(() => {});
   }
+});
+
+client.on(Events.MessageCreate, (message) => {
+  if (!message.guildId) return;
+  const q = peekQueue(message.guildId);
+  if (!q?.nowPlayingMessage) return;
+  if (message.id === q.nowPlayingMessage.id) return;
+  if (message.channelId !== q.nowPlayingMessage.channelId) return;
+  q.bumpNowPlayingMessage();
 });
 
 client.login(process.env.DISCORD_TOKEN);

@@ -241,10 +241,42 @@ class GuildQueue {
     } catch {}
   }
 
+  bumpNowPlayingMessage() {
+    if (!this.nowPlayingMessage || !this.current || !this.textChannel) return;
+    if (this._bumpTimer) return;
+    this._bumpTimer = setTimeout(async () => {
+      this._bumpTimer = null;
+      if (!this.current || !this.textChannel) return;
+      const old = this.nowPlayingMessage;
+      try {
+        const newMsg = await this.textChannel.send({
+          embeds: [
+            nowPlayingEmbed(this.current, {
+              paused: this.status() === 'paused',
+              queue: this,
+              progressSeconds: this.getProgressSeconds(),
+            }),
+          ],
+          components: nowPlayingComponents(this),
+        });
+        this.nowPlayingMessage = newMsg;
+        if (old) {
+          try { await old.delete(); } catch {}
+        }
+      } catch (err) {
+        console.error('[bump]', err.message);
+      }
+    }, 1500);
+  }
+
   #cleanup() {
     if (this.currentProcess) {
       try { this.currentProcess.kill(); } catch {}
       this.currentProcess = null;
+    }
+    if (this._bumpTimer) {
+      clearTimeout(this._bumpTimer);
+      this._bumpTimer = null;
     }
     if (this.connection && this.connection.state.status !== VoiceConnectionStatus.Destroyed) {
       this.connection.destroy();
