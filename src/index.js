@@ -4,6 +4,7 @@ import { readdir } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { startWebServer } from './web/server.js';
+import { handleMusicButton } from './interactions/buttons.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -25,16 +26,22 @@ client.once(Events.ClientReady, (c) => {
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
-  const command = client.commands.get(interaction.commandName);
-  if (!command) return;
   try {
-    await command.execute(interaction);
+    if (interaction.isChatInputCommand()) {
+      const command = client.commands.get(interaction.commandName);
+      if (!command) return;
+      await command.execute(interaction);
+      return;
+    }
+    if (interaction.isButton() && interaction.customId.startsWith('music:')) {
+      await handleMusicButton(interaction);
+      return;
+    }
   } catch (err) {
     console.error(err);
-    const reply = { content: 'Command failed.', flags: MessageFlags.Ephemeral };
-    if (interaction.replied || interaction.deferred) await interaction.followUp(reply);
-    else await interaction.reply(reply);
+    const reply = { content: 'Action failed.', flags: MessageFlags.Ephemeral };
+    if (interaction.replied || interaction.deferred) await interaction.followUp(reply).catch(() => {});
+    else await interaction.reply(reply).catch(() => {});
   }
 });
 

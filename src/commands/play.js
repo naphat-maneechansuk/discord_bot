@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { getQueue } from '../lib/queue-manager.js';
-import { resolveTrack, formatDuration } from '../lib/track.js';
+import { resolveTrack } from '../lib/track.js';
+import { nowPlayingEmbed, queuedEmbed, controlsRow } from '../lib/embeds.js';
 
 export const data = new SlashCommandBuilder()
   .setName('play')
@@ -41,9 +42,10 @@ export async function execute(interaction) {
 
   if (!queue.current) {
     await queue.start();
-    return interaction.followUp(`🎵 Playing: **${track.title}** \`[${formatDuration(track.duration)}]\``);
+    return interaction.followUp({
+      embeds: [nowPlayingEmbed(track)],
+      components: [controlsRow()],
+    });
   }
-  return interaction.followUp(
-    `➕ Added to queue (#${queue.tracks.length}): **${track.title}** \`[${formatDuration(track.duration)}]\``,
-  );
+  return interaction.followUp({ embeds: [queuedEmbed(track, queue.tracks.length)] });
 }

@@ -9,6 +9,7 @@ import {
 } from '@discordjs/voice';
 import { spawn } from 'node:child_process';
 import { YT_DLP } from './track.js';
+import { nowPlayingEmbed, controlsRow } from './embeds.js';
 
 const queues = new Map();
 
@@ -116,7 +117,9 @@ class GuildQueue {
     this.player.play(resource);
 
     if (this.textChannel) {
-      this.textChannel.send(`🎵 Now playing: **${next.title}**`).catch(() => {});
+      this.textChannel
+        .send({ embeds: [nowPlayingEmbed(next)], components: [controlsRow()] })
+        .catch(() => {});
     }
   }
 

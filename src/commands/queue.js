@@ -1,27 +1,13 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { peekQueue } from '../lib/queue-manager.js';
-import { formatDuration } from '../lib/track.js';
+import { queueListEmbed } from '../lib/embeds.js';
 
 export const data = new SlashCommandBuilder().setName('queue').setDescription('Show the current queue');
 
 export async function execute(interaction) {
   const q = peekQueue(interaction.guildId);
-  const ephemeral = { flags: MessageFlags.Ephemeral };
-
   if (!q || (!q.current && q.tracks.length === 0)) {
-    return interaction.reply({ content: 'Queue is empty.', ...ephemeral });
+    return interaction.reply({ content: 'Queue is empty.', flags: MessageFlags.Ephemeral });
   }
-  const lines = [];
-  if (q.current) {
-    lines.push(`▶ **Now:** ${q.current.title} \`[${formatDuration(q.current.duration)}]\``);
-  }
-  if (q.tracks.length > 0) {
-    lines.push('');
-    lines.push('**Up next:**');
-    q.tracks.slice(0, 15).forEach((t, i) => {
-      lines.push(`${i + 1}. ${t.title} \`[${formatDuration(t.duration)}]\``);
-    });
-    if (q.tracks.length > 15) lines.push(`...and ${q.tracks.length - 15} more`);
-  }
-  return interaction.reply({ content: lines.join('\n').slice(0, 1900), ...ephemeral });
+  return interaction.reply({ embeds: [queueListEmbed(q)], flags: MessageFlags.Ephemeral });
 }
