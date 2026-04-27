@@ -21,33 +21,15 @@ function colorFromSource(source) {
   return PALETTE[hash % PALETTE.length];
 }
 
-export function progressBar(currentSec, totalSec) {
-  const len = 18;
-  if (!totalSec || totalSec <= 0) {
-    return '`' + '▬'.repeat(len) + '`\n`?:?? / ?:??`';
-  }
-  const ratio = Math.max(0, Math.min(1, currentSec / totalSec));
-  const pos = Math.min(len - 1, Math.floor(ratio * len));
-  let bar = '';
-  for (let i = 0; i < len; i++) bar += i === pos ? '🔘' : '▬';
-  const pct = Math.round(ratio * 100);
-  return `\`${bar}\`\n\`${formatDuration(currentSec)}  ${pct}%  ${formatDuration(totalSec)}\``;
-}
-
 export function nowPlayingEmbed(track, opts = {}) {
-  const { paused = false, queue = null, progressSeconds = 0 } = opts;
+  const { paused = false, queue = null } = opts;
   const e = new EmbedBuilder()
     .setColor(paused ? COLOR_PAUSED : colorFromSource(track.source))
     .setAuthor({ name: paused ? '⏸ Paused' : '🎵 Now Playing' })
     .setTitle(track.title.slice(0, 256))
     .setURL(track.source ?? null);
 
-  const descLines = [];
-  if (track.artist) descLines.push(`by **${track.artist}**`);
-  descLines.push('');
-  descLines.push(progressBar(progressSeconds, track.duration));
-  e.setDescription(descLines.join('\n'));
-
+  if (track.artist) e.setDescription(`by **${track.artist}**`);
   if (track.thumbnail) e.setThumbnail(track.thumbnail);
 
   const volume = queue ? Math.round(queue.volume * 100) : 100;
@@ -55,6 +37,7 @@ export function nowPlayingEmbed(track, opts = {}) {
   const loop =
     queue?.loopMode === 'track' ? 'Track' : queue?.loopMode === 'queue' ? 'Queue' : 'Off';
   e.addFields(
+    { name: '⏱ Duration', value: formatDuration(track.duration), inline: true },
     { name: '🔊 Volume', value: `${volume}%`, inline: true },
     { name: '🔀 Shuffle', value: shuffle, inline: true },
     { name: '🔁 Loop', value: loop, inline: true },
