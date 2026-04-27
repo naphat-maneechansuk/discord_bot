@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { peekQueue } from '../lib/queue-manager.js';
 import { formatDuration } from '../lib/track.js';
 
@@ -6,8 +6,10 @@ export const data = new SlashCommandBuilder().setName('queue').setDescription('S
 
 export async function execute(interaction) {
   const q = peekQueue(interaction.guildId);
+  const ephemeral = { flags: MessageFlags.Ephemeral };
+
   if (!q || (!q.current && q.tracks.length === 0)) {
-    return interaction.reply('Queue is empty.');
+    return interaction.reply({ content: 'Queue is empty.', ...ephemeral });
   }
   const lines = [];
   if (q.current) {
@@ -21,5 +23,5 @@ export async function execute(interaction) {
     });
     if (q.tracks.length > 15) lines.push(`...and ${q.tracks.length - 15} more`);
   }
-  return interaction.reply(lines.join('\n').slice(0, 1900));
+  return interaction.reply({ content: lines.join('\n').slice(0, 1900), ...ephemeral });
 }
