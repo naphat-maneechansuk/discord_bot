@@ -21,10 +21,18 @@ class GuildQueue {
     this.connection = null;
     this.textChannel = null;
     this.currentProcess = null;
+    this.nowPlayingMessage = null;
 
     this.player = createAudioPlayer();
     this.player.on(AudioPlayerStatus.Idle, () => this.#onIdle());
     this.player.on('error', (err) => console.error(`[player ${guildId}]`, err.message));
+  }
+
+  async retireNowPlayingMessage() {
+    if (!this.nowPlayingMessage) return;
+    const msg = this.nowPlayingMessage;
+    this.nowPlayingMessage = null;
+    try { await msg.delete(); } catch {}
   }
 
   async ensureConnection(voiceChannel) {
@@ -117,9 +125,13 @@ class GuildQueue {
     this.player.play(resource);
 
     if (notify && this.textChannel) {
-      this.textChannel
-        .send({ embeds: [nowPlayingEmbed(next)], components: [controlsRow()] })
-        .catch(() => {});
+      await this.retireNowPlayingMessage();
+      try {
+        this.nowPlayingMessage = await this.textChannel.send({
+          embeds: [nowPlayingEmbed(next)],
+          components: [controlsRow()],
+        });
+      } catch {}
     }
   }
 
@@ -132,6 +144,7 @@ class GuildQueue {
       this.connection.destroy();
     }
     this.connection = null;
+    this.nowPlayingMessage = null;
     queues.delete(this.guildId);
   }
 }

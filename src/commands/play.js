@@ -42,10 +42,13 @@ export async function execute(interaction) {
 
   if (!queue.current) {
     await queue.start();
-    return interaction.followUp({
+    await queue.retireNowPlayingMessage();
+    const reply = await interaction.followUp({
       embeds: [nowPlayingEmbed(track)],
       components: [controlsRow()],
     });
+    queue.nowPlayingMessage = reply;
+    return reply;
   }
   return interaction.followUp({ embeds: [queuedEmbed(track, queue.tracks.length)] });
 }
