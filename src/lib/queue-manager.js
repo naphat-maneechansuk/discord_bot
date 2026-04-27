@@ -106,7 +106,9 @@ class GuildQueue {
     let stderrBuf = '';
     ytProcess.stderr.on('data', (c) => (stderrBuf += c.toString()));
     ytProcess.on('close', (code) => {
-      if (code !== 0 && stderrBuf) console.error(`[yt-dlp ${code}]`, stderrBuf.slice(0, 500));
+      if (code === 0 || code === null) return;
+      if (stderrBuf.includes('Broken pipe')) return;
+      if (stderrBuf) console.error(`[yt-dlp ${code}]`, stderrBuf.slice(0, 500));
     });
     this.currentProcess = ytProcess;
 
