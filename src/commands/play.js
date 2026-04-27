@@ -1,33 +1,17 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
-import {
-  joinVoiceChannel,
-  createAudioPlayer,
-  createAudioResource,
-  StreamType,
-  AudioPlayerStatus,
-  VoiceConnectionStatus,
-  entersState,
-  getVoiceConnection,
-} from '@discordjs/voice';
-import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const YT_DLP = join(__dirname, '..', '..', 'node_modules', 'youtube-dl-exec', 'bin', 'yt-dlp.exe');
+import { getQueue } from '../lib/queue-manager.js';
+import { resolveTrack, formatDuration } from '../lib/track.js';
 
 export const data = new SlashCommandBuilder()
   .setName('play')
-  .setDescription('Play a song from a YouTube URL or search query')
+  .setDescription('Play a song or add to queue')
   .addStringOption((opt) =>
     opt.setName('query').setDescription('YouTube URL or search keywords').setRequired(true),
   );
 
 export async function execute(interaction) {
   const query = interaction.options.getString('query', true);
-  const member = interaction.member;
-  const voiceChannel = member?.voice?.channel;
-
+  const voiceChannel = interaction.member?.voice?.channel;
   if (!voiceChannel) {
     return interaction.reply({
       content: 'Join a voice channel first.',
@@ -37,52 +21,29 @@ export async function execute(interaction) {
 
   await interaction.deferReply();
 
-  const ytArgs = [
-    query.startsWith('http') ? query : `ytsearch1:${query}`,
-    '-f', 'bestaudio[ext=webm]/bestaudio/best',
-    '-o', '-',
-    '--no-playlist',
-    '--quiet',
-    '--no-warnings',
-  ];
-
-  const ytProcess = spawn(YT_DLP, ytArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
-
-  let stderrBuf = '';
-  ytProcess.stderr.on('data', (chunk) => {
-    stderrBuf += chunk.toString();
-  });
-  ytProcess.on('error', (err) => console.error('[yt-dlp spawn error]', err));
-
-  const connection = joinVoiceChannel({
-    channelId: voiceChannel.id,
-    guildId: voiceChannel.guild.id,
-    adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-  });
-
+  let track;
   try {
-    await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
+    track = await resolveTrack(query, interaction.user.tag);
   } catch (err) {
-    connection.destroy();
-    return interaction.followUp(`Failed to connect to voice: ${err.message}`);
+    return interaction.followUp(`Failed to resolve track: ${err.message}`);
   }
 
-  const player = createAudioPlayer();
-  const resource = createAudioResource(ytProcess.stdout, { inputType: StreamType.Arbitrary });
+  const queue = getQueue(interaction.guildId);
+  queue.textChannel = interaction.channel;
 
-  player.play(resource);
-  connection.subscribe(player);
+  try {
+    await queue.ensureConnection(voiceChannel);
+  } catch (err) {
+    return interaction.followUp(`Failed to join voice: ${err.message}`);
+  }
 
-  player.on(AudioPlayerStatus.Idle, () => {
-    player.stop();
-    const conn = getVoiceConnection(voiceChannel.guild.id);
-    if (conn) conn.destroy();
-  });
+  queue.enqueue(track);
 
-  player.on('error', (err) => {
-    console.error('[player error]', err.message);
-    if (stderrBuf) console.error('[yt-dlp stderr]', stderrBuf);
-  });
-
-  return interaction.followUp(`Playing: \`${query}\``);
+  if (!queue.current) {
+    await queue.start();
+    return interaction.followUp(`🎵 Playing: **${track.title}** \`[${formatDuration(track.duration)}]\``);
+  }
+  return interaction.followUp(
+    `➕ Added to queue (#${queue.tracks.length}): **${track.title}** \`[${formatDuration(track.duration)}]\``,
+  );
 }
