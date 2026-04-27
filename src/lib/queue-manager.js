@@ -135,3 +135,7 @@ export function getQueue(guildId) {
 export function peekQueue(guildId) {
   return queues.get(guildId) ?? null;
 }
+
+export function listQueues() {
+  return Array.from(queues.values());
+}

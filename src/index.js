@@ -3,6 +3,7 @@ import { Client, Collection, GatewayIntentBits, Events, MessageFlags } from 'dis
 import { readdir } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
+import { startWebServer } from './web/server.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -20,6 +21,7 @@ for (const file of await readdir(commandsDir)) {
 
 client.once(Events.ClientReady, (c) => {
   console.log(`Bot ready as ${c.user.tag}`);
+  startWebServer(c);
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
