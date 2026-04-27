@@ -248,8 +248,13 @@ class GuildQueue {
       this._bumpTimer = null;
       if (!this.current || !this.textChannel) return;
       const old = this.nowPlayingMessage;
+      this.nowPlayingMessage = null;
+      if (old) {
+        try { await old.delete(); } catch {}
+      }
+      if (!this.current) return;
       try {
-        const newMsg = await this.textChannel.send({
+        this.nowPlayingMessage = await this.textChannel.send({
           embeds: [
             nowPlayingEmbed(this.current, {
               paused: this.status() === 'paused',
@@ -259,10 +264,6 @@ class GuildQueue {
           ],
           components: nowPlayingComponents(this),
         });
-        this.nowPlayingMessage = newMsg;
-        if (old) {
-          try { await old.delete(); } catch {}
-        }
       } catch (err) {
         console.error('[bump]', err.message);
       }
