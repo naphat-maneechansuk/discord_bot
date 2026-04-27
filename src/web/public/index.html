@@ -147,7 +147,8 @@
         toastEl.classList.toggle('error', isError);
         toastEl.classList.add('show');
         clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2500);
+        toastTimer = setTimeout(() => toastEl.classList.remove('show'), isError ? 6000 : 2500);
+        if (isError) console.error('[toast]', msg);
       }
 
       async function action(guildId, path, body) {
@@ -184,17 +185,19 @@
           return;
         }
         mainEl.innerHTML = queues.map((q) => {
+          const isPaused = q.status === 'paused';
+          const labelText = q.status === 'paused' ? 'Paused' : q.status === 'buffering' ? 'Buffering' : 'Now playing';
           const now = q.current
-            ? `<div class="now ${q.isPlaying ? '' : 'paused'}">
-                 <div class="label">${q.isPlaying ? 'Now playing' : 'Paused'}</div>
+            ? `<div class="now ${isPaused ? 'paused' : ''}">
+                 <div class="label">${labelText}</div>
                  <div class="title">${escapeHtml(q.current.title)}</div>
                  <div class="meta">${fmtDuration(q.current.duration)} · requested by ${escapeHtml(q.current.requestedBy ?? 'unknown')}</div>
                </div>
                <div class="controls">
-                 ${q.isPlaying
-                   ? `<button onclick="action('${q.guildId}','pause').then(poll)">⏸ Pause</button>`
-                   : `<button onclick="action('${q.guildId}','resume').then(poll)">▶ Resume</button>`}
-                 <button onclick="action('${q.guildId}','skip').then(poll)" ${q.upcoming.length === 0 ? 'disabled' : ''}>⏭ Skip</button>
+                 ${isPaused
+                   ? `<button onclick="action('${q.guildId}','resume').then(poll)">▶ Resume</button>`
+                   : `<button onclick="action('${q.guildId}','pause').then(poll)">⏸ Pause</button>`}
+                 <button onclick="action('${q.guildId}','skip').then(poll)">⏭ Skip</button>
                  <button class="danger" onclick="action('${q.guildId}','stop').then(poll)">⏹ Stop</button>
                </div>`
             : '';

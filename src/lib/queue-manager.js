@@ -68,7 +68,15 @@ class GuildQueue {
   }
 
   isPlaying() {
-    return this.player.state.status !== AudioPlayerStatus.Idle;
+    return this.player.state.status === AudioPlayerStatus.Playing;
+  }
+
+  status() {
+    const s = this.player.state.status;
+    if (s === AudioPlayerStatus.Playing) return 'playing';
+    if (s === AudioPlayerStatus.Paused || s === AudioPlayerStatus.AutoPaused) return 'paused';
+    if (s === AudioPlayerStatus.Buffering) return 'buffering';
+    return 'idle';
   }
 
   async #onIdle() {

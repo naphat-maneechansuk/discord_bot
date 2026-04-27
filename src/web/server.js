@@ -22,6 +22,7 @@ function serializeQueue(q, client) {
       source: t.source,
     })),
     isPlaying: q.isPlaying(),
+    status: q.status(),
   };
 }
 
@@ -72,17 +73,20 @@ export function startWebServer(client) {
     if (!query) return res.status(400).json({ error: 'query required' });
     const existing = peekQueue(req.params.guildId);
     if (!existing?.connection) {
+      console.warn(`[web] add rejected for ${req.params.guildId}: no active session`);
       return res.status(400).json({
         error: 'No active voice session. Use /play in Discord first to join a voice channel.',
       });
     }
     try {
+      console.log(`[web] adding track to ${req.params.guildId}: ${query}`);
       const track = await resolveTrack(query, requestedBy ?? 'web');
-      const queue = getQueue(req.params.guildId);
-      queue.enqueue(track);
-      if (!queue.current) await queue.start();
+      existing.enqueue(track);
+      if (!existing.current) await existing.start();
+      console.log(`[web] added: ${track.title}`);
       res.json({ ok: true, track: { title: track.title, duration: track.duration } });
     } catch (err) {
+      console.error(`[web] add error:`, err.message);
       res.status(500).json({ error: err.message });
     }
   });
