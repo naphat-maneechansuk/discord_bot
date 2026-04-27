@@ -21,5 +21,6 @@ export async function execute(interaction) {
       flags: MessageFlags.Ephemeral,
     });
   }
+  await q.refreshNowPlayingMessage();
   return interaction.reply({ content: `🗑 Removed: **${removed.title}**`, flags: MessageFlags.Ephemeral });
 }

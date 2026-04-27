@@ -9,7 +9,7 @@ import {
 } from '@discordjs/voice';
 import { spawn } from 'node:child_process';
 import { YT_DLP } from './track.js';
-import { nowPlayingEmbed, controlsRow } from './embeds.js';
+import { nowPlayingEmbed, nowPlayingComponents } from './embeds.js';
 
 const queues = new Map();
 
@@ -165,10 +165,20 @@ class GuildQueue {
       try {
         this.nowPlayingMessage = await this.textChannel.send({
           embeds: [nowPlayingEmbed(next)],
-          components: [controlsRow()],
+          components: nowPlayingComponents(this),
         });
       } catch {}
     }
+  }
+
+  async refreshNowPlayingMessage() {
+    if (!this.nowPlayingMessage || !this.current) return;
+    try {
+      await this.nowPlayingMessage.edit({
+        embeds: [nowPlayingEmbed(this.current, { paused: this.status() === 'paused' })],
+        components: nowPlayingComponents(this),
+      });
+    } catch {}
   }
 
   #cleanup() {

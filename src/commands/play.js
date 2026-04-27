@@ -4,7 +4,7 @@ import { resolveTrack, searchTracks } from '../lib/track.js';
 import {
   nowPlayingEmbed,
   queuedEmbed,
-  controlsRow,
+  nowPlayingComponents,
   searchResultsEmbed,
   searchResultsSelect,
 } from '../lib/embeds.js';
@@ -66,10 +66,11 @@ export async function execute(interaction) {
     await queue.retireNowPlayingMessage();
     const reply = await interaction.followUp({
       embeds: [nowPlayingEmbed(track)],
-      components: [controlsRow()],
+      components: nowPlayingComponents(queue),
     });
     queue.nowPlayingMessage = reply;
     return reply;
   }
+  await queue.refreshNowPlayingMessage();
   return interaction.followUp({ embeds: [queuedEmbed(track, queue.tracks.length)] });
 }

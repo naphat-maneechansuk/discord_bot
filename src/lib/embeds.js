@@ -94,7 +94,21 @@ export function searchResultsSelect(results) {
   return new ActionRowBuilder().addComponents(select);
 }
 
-export function controlsRow({ paused = false } = {}) {
+function loopButton(loopMode) {
+  const map = {
+    off: { label: 'Loop', emoji: '➡️', style: ButtonStyle.Secondary },
+    track: { label: 'Track', emoji: '🔂', style: ButtonStyle.Primary },
+    queue: { label: 'Queue', emoji: '🔁', style: ButtonStyle.Primary },
+  };
+  const cfg = map[loopMode] ?? map.off;
+  return new ButtonBuilder()
+    .setCustomId('music:loop')
+    .setLabel(cfg.label)
+    .setEmoji(cfg.emoji)
+    .setStyle(cfg.style);
+}
+
+export function controlsRow({ paused = false, loopMode = 'off' } = {}) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(paused ? 'music:resume' : 'music:pause')
@@ -102,7 +116,31 @@ export function controlsRow({ paused = false } = {}) {
       .setEmoji(paused ? '▶️' : '⏸️')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('music:skip').setLabel('Skip').setEmoji('⏭️').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('music:queue').setLabel('Queue').setEmoji('📋').setStyle(ButtonStyle.Secondary),
+    loopButton(loopMode),
     new ButtonBuilder().setCustomId('music:stop').setLabel('Stop').setEmoji('⏹️').setStyle(ButtonStyle.Danger),
   );
+}
+
+export function queueRemoveRow(tracks) {
+  if (!tracks || tracks.length === 0) return null;
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('music:remove')
+    .setPlaceholder(`🗑️ Remove a track from queue (${tracks.length})...`)
+    .addOptions(
+      tracks.slice(0, 25).map((t, i) => ({
+        label: `${i + 1}. ${t.title}`.slice(0, 100),
+        description: `${formatDuration(t.duration)}${t.requestedBy ? ` · ${t.requestedBy}` : ''}`.slice(0, 100),
+        value: String(i),
+        emoji: '🗑️',
+      })),
+    );
+  return new ActionRowBuilder().addComponents(select);
+}
+
+export function nowPlayingComponents(queue) {
+  const paused = queue.status() === 'paused';
+  const rows = [controlsRow({ paused, loopMode: queue.loopMode })];
+  const removeRow = queueRemoveRow(queue.tracks);
+  if (removeRow) rows.push(removeRow);
+  return rows;
 }

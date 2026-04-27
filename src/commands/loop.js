@@ -21,6 +21,7 @@ export async function execute(interaction) {
   if (!q) return interaction.reply({ content: 'Nothing playing.', flags: MessageFlags.Ephemeral });
   const mode = interaction.options.getString('mode', true);
   q.setLoopMode(mode);
+  await q.refreshNowPlayingMessage();
   const label = mode === 'off' ? '➡ Loop off' : mode === 'track' ? '🔂 Looping current track' : '🔁 Looping queue';
   return interaction.reply({ content: label, flags: MessageFlags.Ephemeral });
 }
