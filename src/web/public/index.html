@@ -12,7 +12,10 @@
         --text: #e6e8eb;
         --muted: #8b95a7;
         --accent: #5865f2;
+        --accent-hover: #4752c4;
         --green: #43b581;
+        --red: #ed4245;
+        --yellow: #faa61a;
       }
       * { box-sizing: border-box; }
       body {
@@ -49,11 +52,44 @@
         border-left: 3px solid var(--green);
         padding: 12px 16px;
         border-radius: 4px;
-        margin-bottom: 16px;
+        margin-bottom: 12px;
       }
+      .now.paused { background: rgba(250, 166, 26, 0.1); border-color: var(--yellow); }
       .now .label { font-size: 11px; color: var(--green); text-transform: uppercase; letter-spacing: 0.5px; }
+      .now.paused .label { color: var(--yellow); }
       .now .title { font-weight: 500; margin-top: 4px; }
       .now .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+      .controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+      button {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--border);
+        padding: 8px 14px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      button:hover:not(:disabled) { background: var(--border); }
+      button:disabled { opacity: 0.4; cursor: not-allowed; }
+      button.primary { background: var(--accent); border-color: var(--accent); }
+      button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+      button.danger { color: var(--red); }
+      button.danger:hover:not(:disabled) { background: rgba(237, 66, 69, 0.1); }
+
+      .add-form { display: flex; gap: 8px; margin-bottom: 16px; }
+      input[type=text] {
+        flex: 1;
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      input[type=text]:focus { outline: none; border-color: var(--accent); }
+
       ul { list-style: none; padding: 0; margin: 0; }
       li {
         padding: 10px 0;
@@ -67,6 +103,14 @@
       li .idx { color: var(--muted); margin-right: 8px; }
       li .dur { color: var(--muted); font-size: 12px; flex-shrink: 0; }
       .upcoming-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+      .toast {
+        position: fixed; bottom: 20px; right: 20px;
+        background: var(--panel); border: 1px solid var(--border);
+        padding: 10px 16px; border-radius: 6px; font-size: 13px;
+        opacity: 0; transition: opacity 0.2s;
+      }
+      .toast.show { opacity: 1; }
+      .toast.error { border-color: var(--red); color: var(--red); }
     </style>
   </head>
   <body>
@@ -77,9 +121,12 @@
     <main id="main">
       <div class="empty">Loading...</div>
     </main>
+    <div class="toast" id="toast"></div>
+
     <script>
       const statusEl = document.getElementById('status');
       const mainEl = document.getElementById('main');
+      const toastEl = document.getElementById('toast');
 
       function fmtDuration(s) {
         if (!s) return '?:??';
@@ -94,6 +141,43 @@
         }[c]));
       }
 
+      let toastTimer = null;
+      function toast(msg, isError = false) {
+        toastEl.textContent = msg;
+        toastEl.classList.toggle('error', isError);
+        toastEl.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2500);
+      }
+
+      async function action(guildId, path, body) {
+        try {
+          const res = await fetch(`/api/queue/${guildId}/${path}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: body ? JSON.stringify(body) : undefined,
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error ?? 'Failed');
+          return data;
+        } catch (err) {
+          toast(err.message, true);
+          throw err;
+        }
+      }
+
+      async function onAdd(guildId) {
+        const input = document.getElementById(`add-${guildId}`);
+        const query = input.value.trim();
+        if (!query) return;
+        try {
+          const data = await action(guildId, 'add', { query, requestedBy: 'web' });
+          toast(`Added: ${data.track.title}`);
+          input.value = '';
+          poll();
+        } catch {}
+      }
+
       function render(queues) {
         if (!queues || queues.length === 0) {
           mainEl.innerHTML = '<div class="empty">No active queues. Use <code>/play</code> in Discord to start.</div>';
@@ -101,12 +185,25 @@
         }
         mainEl.innerHTML = queues.map((q) => {
           const now = q.current
-            ? `<div class="now">
+            ? `<div class="now ${q.isPlaying ? '' : 'paused'}">
                  <div class="label">${q.isPlaying ? 'Now playing' : 'Paused'}</div>
                  <div class="title">${escapeHtml(q.current.title)}</div>
                  <div class="meta">${fmtDuration(q.current.duration)} · requested by ${escapeHtml(q.current.requestedBy ?? 'unknown')}</div>
+               </div>
+               <div class="controls">
+                 ${q.isPlaying
+                   ? `<button onclick="action('${q.guildId}','pause').then(poll)">⏸ Pause</button>`
+                   : `<button onclick="action('${q.guildId}','resume').then(poll)">▶ Resume</button>`}
+                 <button onclick="action('${q.guildId}','skip').then(poll)" ${q.upcoming.length === 0 ? 'disabled' : ''}>⏭ Skip</button>
+                 <button class="danger" onclick="action('${q.guildId}','stop').then(poll)">⏹ Stop</button>
                </div>`
             : '';
+          const addForm = `
+            <div class="add-form">
+              <input type="text" id="add-${q.guildId}" placeholder="YouTube URL or search keywords"
+                     onkeydown="if(event.key==='Enter') onAdd('${q.guildId}')" />
+              <button class="primary" onclick="onAdd('${q.guildId}')">Add</button>
+            </div>`;
           const upcoming = q.upcoming.length
             ? `<div class="upcoming-label">Up next (${q.upcoming.length})</div>
                <ul>${q.upcoming.map((t, i) => `
@@ -116,6 +213,7 @@
           return `<div class="guild">
                     <h2>${escapeHtml(q.guildName)}</h2>
                     ${now}
+                    ${addForm}
                     ${upcoming}
                   </div>`;
         }).join('');
