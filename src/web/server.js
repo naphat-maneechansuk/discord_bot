@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { listQueues, peekQueue, getQueue } from '../lib/queue-manager.js';
 import { resolveTrack } from '../lib/track.js';
+import { registerAuthRoutes, requireAuth } from './auth.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.WEB_PORT ?? 3000;
@@ -26,70 +27,87 @@ function serializeQueue(q, client) {
   };
 }
 
+function userCanAccessGuild(session, guildId) {
+  return session.guildIds.includes(guildId);
+}
+
 export function startWebServer(client) {
   const app = express();
-
   app.use(express.json());
   app.use(express.static(join(__dirname, 'public')));
 
-  app.get('/api/queues', (_req, res) => {
-    res.json(listQueues().map((q) => serializeQueue(q, client)));
+  registerAuthRoutes(app, {
+    clientId: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    redirectUri: process.env.OAUTH_REDIRECT_URI ?? `http://localhost:${PORT}/auth/callback`,
   });
 
-  app.get('/api/queue/:guildId', (req, res) => {
+  app.get('/api/queues', requireAuth, (req, res) => {
+    const accessible = listQueues().filter((q) => userCanAccessGuild(req.session, q.guildId));
+    res.json(accessible.map((q) => serializeQueue(q, client)));
+  });
+
+  app.get('/api/queue/:guildId', requireAuth, (req, res) => {
+    if (!userCanAccessGuild(req.session, req.params.guildId)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
     const q = peekQueue(req.params.guildId);
     if (!q) return res.json(null);
     res.json(serializeQueue(q, client));
   });
 
-  app.post('/api/queue/:guildId/skip', (req, res) => {
+  const guildAction = (handler) => (req, res) => {
+    if (!userCanAccessGuild(req.session, req.params.guildId)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    return handler(req, res);
+  };
+
+  app.post('/api/queue/:guildId/skip', requireAuth, guildAction((req, res) => {
     const q = peekQueue(req.params.guildId);
     if (!q?.current) return res.status(400).json({ error: 'Nothing playing' });
     q.skip();
     res.json({ ok: true });
-  });
+  }));
 
-  app.post('/api/queue/:guildId/pause', (req, res) => {
+  app.post('/api/queue/:guildId/pause', requireAuth, guildAction((req, res) => {
     const q = peekQueue(req.params.guildId);
     if (!q?.current) return res.status(400).json({ error: 'Nothing playing' });
     res.json({ ok: q.pause() });
-  });
+  }));
 
-  app.post('/api/queue/:guildId/resume', (req, res) => {
+  app.post('/api/queue/:guildId/resume', requireAuth, guildAction((req, res) => {
     const q = peekQueue(req.params.guildId);
     if (!q?.current) return res.status(400).json({ error: 'Nothing playing' });
     res.json({ ok: q.resume() });
-  });
+  }));
 
-  app.post('/api/queue/:guildId/stop', (req, res) => {
+  app.post('/api/queue/:guildId/stop', requireAuth, guildAction((req, res) => {
     const q = peekQueue(req.params.guildId);
     if (!q) return res.status(400).json({ error: 'Not connected' });
     q.stop();
     res.json({ ok: true });
-  });
+  }));
 
-  app.post('/api/queue/:guildId/add', async (req, res) => {
-    const { query, requestedBy } = req.body ?? {};
+  app.post('/api/queue/:guildId/add', requireAuth, guildAction(async (req, res) => {
+    const { query } = req.body ?? {};
     if (!query) return res.status(400).json({ error: 'query required' });
     const existing = peekQueue(req.params.guildId);
     if (!existing?.connection) {
-      console.warn(`[web] add rejected for ${req.params.guildId}: no active session`);
       return res.status(400).json({
         error: 'No active voice session. Use /play in Discord first to join a voice channel.',
       });
     }
     try {
-      console.log(`[web] adding track to ${req.params.guildId}: ${query}`);
-      const track = await resolveTrack(query, requestedBy ?? 'web');
+      const track = await resolveTrack(query, req.session.globalName ?? req.session.username);
       existing.enqueue(track);
       if (!existing.current) await existing.start();
-      console.log(`[web] added: ${track.title}`);
       res.json({ ok: true, track: { title: track.title, duration: track.duration } });
     } catch (err) {
       console.error(`[web] add error:`, err.message);
       res.status(500).json({ error: err.message });
     }
-  });
+  }));
 
   app.listen(PORT, '127.0.0.1', () => {
     console.log(`Web dashboard: http://localhost:${PORT}`);

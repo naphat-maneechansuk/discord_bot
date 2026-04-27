@@ -30,45 +30,39 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 16px;
       }
       header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+      .header-right { display: flex; align-items: center; gap: 12px; }
       .status { font-size: 12px; color: var(--muted); }
+      .user { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+      .user img { width: 28px; height: 28px; border-radius: 50%; }
       main { padding: 24px; max-width: 900px; margin: 0 auto; }
-      .empty {
-        text-align: center;
-        padding: 64px 24px;
-        color: var(--muted);
+      .empty { text-align: center; padding: 64px 24px; color: var(--muted); }
+      .login-screen {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        min-height: 60vh; gap: 16px;
       }
+      .login-screen h2 { margin: 0; font-size: 20px; }
+      .login-screen p { color: var(--muted); margin: 0; }
       .guild {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 20px;
-        margin-bottom: 16px;
+        background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+        padding: 20px; margin-bottom: 16px;
       }
       .guild h2 { margin: 0 0 16px 0; font-size: 16px; font-weight: 600; }
       .now {
-        background: rgba(67, 181, 129, 0.1);
-        border-left: 3px solid var(--green);
-        padding: 12px 16px;
-        border-radius: 4px;
-        margin-bottom: 12px;
+        background: rgba(67, 181, 129, 0.1); border-left: 3px solid var(--green);
+        padding: 12px 16px; border-radius: 4px; margin-bottom: 12px;
       }
       .now.paused { background: rgba(250, 166, 26, 0.1); border-color: var(--yellow); }
       .now .label { font-size: 11px; color: var(--green); text-transform: uppercase; letter-spacing: 0.5px; }
       .now.paused .label { color: var(--yellow); }
       .now .title { font-weight: 500; margin-top: 4px; }
       .now .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
-
       .controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
       button {
-        background: var(--panel);
-        color: var(--text);
-        border: 1px solid var(--border);
-        padding: 8px 14px;
-        border-radius: 6px;
-        font-size: 13px;
-        cursor: pointer;
+        background: var(--panel); color: var(--text); border: 1px solid var(--border);
+        padding: 8px 14px; border-radius: 6px; font-size: 13px; cursor: pointer;
         transition: all 0.15s;
       }
       button:hover:not(:disabled) { background: var(--border); }
@@ -77,32 +71,26 @@
       button.primary:hover:not(:disabled) { background: var(--accent-hover); }
       button.danger { color: var(--red); }
       button.danger:hover:not(:disabled) { background: rgba(237, 66, 69, 0.1); }
-
+      button.large { padding: 12px 24px; font-size: 14px; }
+      a.button { display: inline-block; text-decoration: none; }
       .add-form { display: flex; gap: 8px; margin-bottom: 16px; }
       input[type=text] {
-        flex: 1;
-        background: var(--bg);
-        color: var(--text);
-        border: 1px solid var(--border);
-        padding: 8px 12px;
-        border-radius: 6px;
-        font-size: 13px;
+        flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+        padding: 8px 12px; border-radius: 6px; font-size: 13px;
       }
       input[type=text]:focus { outline: none; border-color: var(--accent); }
-
       ul { list-style: none; padding: 0; margin: 0; }
       li {
-        padding: 10px 0;
-        border-bottom: 1px solid var(--border);
-        font-size: 14px;
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
+        padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px;
+        display: flex; justify-content: space-between; gap: 12px;
       }
       li:last-child { border-bottom: none; }
       li .idx { color: var(--muted); margin-right: 8px; }
       li .dur { color: var(--muted); font-size: 12px; flex-shrink: 0; }
-      .upcoming-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+      .upcoming-label {
+        font-size: 11px; color: var(--muted); text-transform: uppercase;
+        letter-spacing: 0.5px; margin-bottom: 8px;
+      }
       .toast {
         position: fixed; bottom: 20px; right: 20px;
         background: var(--panel); border: 1px solid var(--border);
@@ -116,17 +104,18 @@
   <body>
     <header>
       <h1>🎵 Music Bot Dashboard</h1>
-      <span class="status" id="status">connecting...</span>
+      <div class="header-right" id="headerRight"></div>
     </header>
-    <main id="main">
-      <div class="empty">Loading...</div>
-    </main>
+    <main id="main"><div class="empty">Loading...</div></main>
     <div class="toast" id="toast"></div>
 
     <script>
-      const statusEl = document.getElementById('status');
+      const headerRightEl = document.getElementById('headerRight');
       const mainEl = document.getElementById('main');
       const toastEl = document.getElementById('toast');
+
+      let me = null;
+      let pollHandle = null;
 
       function fmtDuration(s) {
         if (!s) return '?:??';
@@ -151,6 +140,36 @@
         if (isError) console.error('[toast]', msg);
       }
 
+      function avatarUrl(user) {
+        if (!user.avatar) {
+          return `https://cdn.discordapp.com/embed/avatars/${(BigInt(user.id) >> 22n) % 6n}.png`;
+        }
+        return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=64`;
+      }
+
+      function renderHeader() {
+        if (me) {
+          headerRightEl.innerHTML = `
+            <span class="status" id="status">connecting...</span>
+            <div class="user">
+              <img src="${avatarUrl(me)}" alt="" />
+              <span>${escapeHtml(me.globalName ?? me.username)}</span>
+            </div>
+            <button onclick="logout()">Logout</button>`;
+        } else {
+          headerRightEl.innerHTML = '';
+        }
+      }
+
+      function showLoginScreen() {
+        mainEl.innerHTML = `
+          <div class="login-screen">
+            <h2>Login required</h2>
+            <p>Sign in with Discord to control your music bot</p>
+            <a href="/auth/login" class="button"><button class="primary large">Login with Discord</button></a>
+          </div>`;
+      }
+
       async function action(guildId, path, body) {
         try {
           const res = await fetch(`/api/queue/${guildId}/${path}`, {
@@ -172,16 +191,26 @@
         const query = input.value.trim();
         if (!query) return;
         try {
-          const data = await action(guildId, 'add', { query, requestedBy: 'web' });
+          const data = await action(guildId, 'add', { query });
           toast(`Added: ${data.track.title}`);
           input.value = '';
           poll();
         } catch {}
       }
 
-      function render(queues) {
+      async function logout() {
+        await fetch('/auth/logout', { method: 'POST' });
+        me = null;
+        if (pollHandle) clearInterval(pollHandle);
+        renderHeader();
+        showLoginScreen();
+      }
+
+      function renderQueues(queues) {
+        const statusEl = document.getElementById('status');
         if (!queues || queues.length === 0) {
           mainEl.innerHTML = '<div class="empty">No active queues. Use <code>/play</code> in Discord to start.</div>';
+          if (statusEl) statusEl.textContent = `live · updated ${new Date().toLocaleTimeString()}`;
           return;
         }
         mainEl.innerHTML = queues.map((q) => {
@@ -215,26 +244,47 @@
             : '';
           return `<div class="guild">
                     <h2>${escapeHtml(q.guildName)}</h2>
-                    ${now}
-                    ${addForm}
-                    ${upcoming}
+                    ${now}${addForm}${upcoming}
                   </div>`;
         }).join('');
+        if (statusEl) statusEl.textContent = `live · updated ${new Date().toLocaleTimeString()}`;
       }
 
       async function poll() {
         try {
           const res = await fetch('/api/queues');
+          if (res.status === 401) {
+            me = null;
+            if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+            renderHeader();
+            showLoginScreen();
+            return;
+          }
           const data = await res.json();
-          render(data);
-          statusEl.textContent = `live · updated ${new Date().toLocaleTimeString()}`;
+          renderQueues(data);
         } catch (err) {
-          statusEl.textContent = 'disconnected';
+          const statusEl = document.getElementById('status');
+          if (statusEl) statusEl.textContent = 'disconnected';
         }
       }
 
-      poll();
-      setInterval(poll, 2000);
+      async function init() {
+        try {
+          const res = await fetch('/auth/me');
+          if (res.ok) {
+            me = await res.json();
+            renderHeader();
+            poll();
+            pollHandle = setInterval(poll, 2000);
+          } else {
+            showLoginScreen();
+          }
+        } catch {
+          showLoginScreen();
+        }
+      }
+
+      init();
     </script>
   </body>
 </html>
