@@ -65,7 +65,7 @@ export async function execute(interaction) {
     await queue.start();
     await queue.retireNowPlayingMessage();
     const reply = await interaction.followUp({
-      embeds: [nowPlayingEmbed(track)],
+      embeds: [nowPlayingEmbed(track, { queue, progressSeconds: 0 })],
       components: nowPlayingComponents(queue),
     });
     queue.nowPlayingMessage = reply;

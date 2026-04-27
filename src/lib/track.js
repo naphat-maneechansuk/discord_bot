@@ -11,6 +11,7 @@ export async function resolveTrack(query, requestedBy) {
   return {
     source: meta.webpage_url || source,
     title: meta.title ?? query,
+    artist: meta.artist ?? meta.uploader ?? meta.channel ?? '',
     duration: meta.duration ?? 0,
     thumbnail: meta.thumbnail ?? null,
     requestedBy,

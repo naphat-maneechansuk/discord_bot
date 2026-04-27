@@ -49,7 +49,7 @@ async function handleSearchPick(interaction) {
     await queue.start();
     await queue.retireNowPlayingMessage();
     const reply = await interaction.editReply({
-      embeds: [nowPlayingEmbed(track)],
+      embeds: [nowPlayingEmbed(track, { queue, progressSeconds: 0 })],
       components: nowPlayingComponents(queue),
     });
     queue.nowPlayingMessage = reply;
@@ -73,7 +73,13 @@ async function handleRemove(interaction) {
     return interaction.reply({ content: 'Track no longer in queue.', flags: MessageFlags.Ephemeral });
   }
   await interaction.update({
-    embeds: [nowPlayingEmbed(q.current, { paused: q.status() === 'paused' })],
+    embeds: [
+      nowPlayingEmbed(q.current, {
+        paused: q.status() === 'paused',
+        queue: q,
+        progressSeconds: q.getProgressSeconds(),
+      }),
+    ],
     components: nowPlayingComponents(q),
   });
   await interaction.followUp({

@@ -27,6 +27,49 @@ class GuildQueue {
     this.player = createAudioPlayer();
     this.player.on(AudioPlayerStatus.Idle, () => this.#onIdle());
     this.player.on('error', (err) => console.error(`[player ${guildId}]`, err.message));
+
+    this.history = [];
+    this.shuffle = false;
+    this.volume = 1.0;
+    this.currentResource = null;
+  }
+
+  toggleShuffle() {
+    this.shuffle = !this.shuffle;
+    return this.shuffle;
+  }
+
+  setVolume(v) {
+    v = Math.max(0, Math.min(1, v));
+    this.volume = v;
+    if (this.currentResource?.volume) this.currentResource.volume.setVolume(v);
+    return v;
+  }
+
+  adjustVolume(delta) {
+    return this.setVolume(this.volume + delta);
+  }
+
+  getProgressSeconds() {
+    if (!this.currentResource) return 0;
+    return Math.floor((this.currentResource.playbackDuration || 0) / 1000);
+  }
+
+  prev() {
+    const restart = this.getProgressSeconds() > 5 && this.current;
+    if (restart) {
+      this.tracks.unshift(this.current);
+      this.current = null;
+      this.player.stop();
+      return true;
+    }
+    if (this.history.length === 0) return false;
+    const prevTrack = this.history.pop();
+    if (this.current) this.tracks.unshift(this.current);
+    this.tracks.unshift(prevTrack);
+    this.current = null;
+    this.player.stop();
+    return true;
   }
 
   async retireNowPlayingMessage() {
@@ -115,8 +158,14 @@ class GuildQueue {
       nextTrack = this.current;
       notify = false;
     } else {
-      if (this.loopMode === 'queue' && this.current) {
-        this.tracks.push(this.current);
+      if (this.current) {
+        this.history.push(this.current);
+        if (this.history.length > 50) this.history.shift();
+        if (this.loopMode === 'queue') this.tracks.push(this.current);
+      }
+      if (this.shuffle && this.tracks.length > 1) {
+        const idx = Math.floor(Math.random() * this.tracks.length);
+        [this.tracks[0], this.tracks[idx]] = [this.tracks[idx], this.tracks[0]];
       }
       nextTrack = this.tracks.shift();
     }
@@ -157,14 +206,19 @@ class GuildQueue {
     });
     this.currentProcess = ytProcess;
 
-    const resource = createAudioResource(ytProcess.stdout, { inputType: StreamType.Arbitrary });
+    const resource = createAudioResource(ytProcess.stdout, {
+      inputType: StreamType.Arbitrary,
+      inlineVolume: true,
+    });
+    if (resource.volume) resource.volume.setVolume(this.volume);
+    this.currentResource = resource;
     this.player.play(resource);
 
     if (notify && this.textChannel) {
       await this.retireNowPlayingMessage();
       try {
         this.nowPlayingMessage = await this.textChannel.send({
-          embeds: [nowPlayingEmbed(next)],
+          embeds: [nowPlayingEmbed(next, { queue: this, progressSeconds: 0 })],
           components: nowPlayingComponents(this),
         });
       } catch {}
@@ -175,7 +229,13 @@ class GuildQueue {
     if (!this.nowPlayingMessage || !this.current) return;
     try {
       await this.nowPlayingMessage.edit({
-        embeds: [nowPlayingEmbed(this.current, { paused: this.status() === 'paused' })],
+        embeds: [
+          nowPlayingEmbed(this.current, {
+            paused: this.status() === 'paused',
+            queue: this,
+            progressSeconds: this.getProgressSeconds(),
+          }),
+        ],
         components: nowPlayingComponents(this),
       });
     } catch {}
@@ -191,6 +251,8 @@ class GuildQueue {
     }
     this.connection = null;
     this.nowPlayingMessage = null;
+    this.currentResource = null;
+    this.history = [];
     queues.delete(this.guildId);
   }
 }
