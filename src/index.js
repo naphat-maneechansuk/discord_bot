@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { startWebServer } from './web/server.js';
 import { handleMusicButton } from './interactions/buttons.js';
+import { handleMusicSelect } from './interactions/menus.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -35,6 +36,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
     if (interaction.isButton() && interaction.customId.startsWith('music:')) {
       await handleMusicButton(interaction);
+      return;
+    }
+    if (interaction.isStringSelectMenu() && interaction.customId.startsWith('music:')) {
+      await handleMusicSelect(interaction);
       return;
     }
   } catch (err) {

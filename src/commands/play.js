@@ -1,7 +1,13 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { getQueue } from '../lib/queue-manager.js';
-import { resolveTrack } from '../lib/track.js';
-import { nowPlayingEmbed, queuedEmbed, controlsRow } from '../lib/embeds.js';
+import { resolveTrack, searchTracks } from '../lib/track.js';
+import {
+  nowPlayingEmbed,
+  queuedEmbed,
+  controlsRow,
+  searchResultsEmbed,
+  searchResultsSelect,
+} from '../lib/embeds.js';
 
 export const data = new SlashCommandBuilder()
   .setName('play')
@@ -21,6 +27,21 @@ export async function execute(interaction) {
   }
 
   await interaction.deferReply();
+  const isUrl = /^https?:\/\//i.test(query);
+
+  if (!isUrl) {
+    let results;
+    try {
+      results = await searchTracks(query, 5);
+    } catch (err) {
+      return interaction.followUp(`Search failed: ${err.message}`);
+    }
+    if (!results.length) return interaction.followUp(`No results for "${query}".`);
+    return interaction.followUp({
+      embeds: [searchResultsEmbed(query, results)],
+      components: [searchResultsSelect(results)],
+    });
+  }
 
   let track;
   try {

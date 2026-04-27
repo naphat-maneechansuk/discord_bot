@@ -1,4 +1,10 @@
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import {
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+} from 'discord.js';
 import { formatDuration } from './track.js';
 
 const COLOR_PLAYING = 0x43b581;
@@ -57,6 +63,35 @@ export function stoppedEmbed() {
     .setColor(COLOR_STOPPED)
     .setAuthor({ name: '⏹ Stopped' })
     .setDescription('Queue cleared. Disconnected from voice.');
+}
+
+export function searchResultsEmbed(query, results) {
+  return new EmbedBuilder()
+    .setColor(COLOR_QUEUED)
+    .setTitle(`🔍 Search results for "${query}"`)
+    .setDescription(
+      results
+        .map((r, i) => `\`${i + 1}.\` **${r.title}** \`[${formatDuration(r.duration)}]\`${r.channel ? ` — ${r.channel}` : ''}`)
+        .join('\n')
+        .slice(0, 4000),
+    );
+}
+
+const NUMBER_EMOJI = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+
+export function searchResultsSelect(results) {
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('music:search')
+    .setPlaceholder('Pick a track to play')
+    .addOptions(
+      results.map((r, i) => ({
+        label: r.title.slice(0, 100),
+        description: `${formatDuration(r.duration)}${r.channel ? ` · ${r.channel}` : ''}`.slice(0, 100),
+        value: r.source.slice(0, 100),
+        emoji: NUMBER_EMOJI[i] ?? undefined,
+      })),
+    );
+  return new ActionRowBuilder().addComponents(select);
 }
 
 export function controlsRow({ paused = false } = {}) {
