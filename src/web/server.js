@@ -24,6 +24,7 @@ function serializeQueue(q, client) {
     })),
     isPlaying: q.isPlaying(),
     status: q.status(),
+    loopMode: q.loopMode,
   };
 }
 
@@ -87,6 +88,26 @@ export function startWebServer(client) {
     if (!q) return res.status(400).json({ error: 'Not connected' });
     q.stop();
     res.json({ ok: true });
+  }));
+
+  app.post('/api/queue/:guildId/loop', requireAuth, guildAction((req, res) => {
+    const q = peekQueue(req.params.guildId);
+    if (!q) return res.status(400).json({ error: 'Not connected' });
+    if (req.body?.mode) {
+      if (!q.setLoopMode(req.body.mode)) return res.status(400).json({ error: 'Invalid mode' });
+    } else {
+      q.cycleLoopMode();
+    }
+    res.json({ ok: true, loopMode: q.loopMode });
+  }));
+
+  app.delete('/api/queue/:guildId/track/:index', requireAuth, guildAction((req, res) => {
+    const q = peekQueue(req.params.guildId);
+    if (!q) return res.status(400).json({ error: 'Not connected' });
+    const idx = parseInt(req.params.index, 10);
+    const removed = q.removeAt(idx);
+    if (!removed) return res.status(400).json({ error: 'Index out of range' });
+    res.json({ ok: true, removed: { title: removed.title } });
   }));
 
   app.post('/api/queue/:guildId/add', requireAuth, guildAction(async (req, res) => {

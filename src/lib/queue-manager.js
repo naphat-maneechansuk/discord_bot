@@ -22,6 +22,7 @@ class GuildQueue {
     this.textChannel = null;
     this.currentProcess = null;
     this.nowPlayingMessage = null;
+    this.loopMode = 'off'; // 'off' | 'track' | 'queue'
 
     this.player = createAudioPlayer();
     this.player.on(AudioPlayerStatus.Idle, () => this.#onIdle());
@@ -57,6 +58,24 @@ class GuildQueue {
     if (!this.current) await this.#playNext({ notify: false });
   }
 
+  setLoopMode(mode) {
+    if (!['off', 'track', 'queue'].includes(mode)) return false;
+    this.loopMode = mode;
+    return true;
+  }
+
+  cycleLoopMode() {
+    const order = ['off', 'track', 'queue'];
+    this.loopMode = order[(order.indexOf(this.loopMode) + 1) % order.length];
+    return this.loopMode;
+  }
+
+  removeAt(index) {
+    if (index < 0 || index >= this.tracks.length) return null;
+    const [removed] = this.tracks.splice(index, 1);
+    return removed;
+  }
+
   skip() {
     this.player.stop();
   }
@@ -89,17 +108,34 @@ class GuildQueue {
   }
 
   async #onIdle() {
-    if (this.tracks.length === 0) {
+    let nextTrack;
+    let notify = true;
+
+    if (this.loopMode === 'track' && this.current) {
+      nextTrack = this.current;
+      notify = false;
+    } else {
+      if (this.loopMode === 'queue' && this.current) {
+        this.tracks.push(this.current);
+      }
+      nextTrack = this.tracks.shift();
+    }
+
+    if (!nextTrack) {
       this.current = null;
       this.#cleanup();
       return;
     }
-    await this.#playNext({ notify: true });
+    await this.#playTrack(nextTrack, { notify });
   }
 
   async #playNext({ notify = true } = {}) {
     const next = this.tracks.shift();
     if (!next) return;
+    await this.#playTrack(next, { notify });
+  }
+
+  async #playTrack(next, { notify = true } = {}) {
     this.current = next;
 
     if (this.currentProcess) {

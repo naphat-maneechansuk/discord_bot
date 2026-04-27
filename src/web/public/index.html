@@ -87,6 +87,13 @@
       li:last-child { border-bottom: none; }
       li .idx { color: var(--muted); margin-right: 8px; }
       li .dur { color: var(--muted); font-size: 12px; flex-shrink: 0; }
+      li .right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+      li button.remove {
+        padding: 4px 10px; font-size: 12px; color: var(--muted);
+        background: transparent; border: 1px solid var(--border);
+      }
+      li button.remove:hover:not(:disabled) { color: var(--red); border-color: var(--red); background: rgba(237, 66, 69, 0.1); }
+      .loop-btn.active { border-color: var(--accent); color: var(--accent); }
       .upcoming-label {
         font-size: 11px; color: var(--muted); text-transform: uppercase;
         letter-spacing: 0.5px; margin-bottom: 8px;
@@ -170,10 +177,10 @@
           </div>`;
       }
 
-      async function action(guildId, path, body) {
+      async function action(guildId, path, body, method = 'POST') {
         try {
           const res = await fetch(`/api/queue/${guildId}/${path}`, {
-            method: 'POST',
+            method,
             headers: { 'content-type': 'application/json' },
             body: body ? JSON.stringify(body) : undefined,
           });
@@ -184,6 +191,14 @@
           toast(err.message, true);
           throw err;
         }
+      }
+
+      async function removeTrack(guildId, index, title) {
+        try {
+          await action(guildId, `track/${index}`, null, 'DELETE');
+          toast(`Removed: ${title}`);
+          poll();
+        } catch {}
       }
 
       async function onAdd(guildId) {
@@ -227,6 +242,9 @@
                    ? `<button onclick="action('${q.guildId}','resume').then(poll)">▶ Resume</button>`
                    : `<button onclick="action('${q.guildId}','pause').then(poll)">⏸ Pause</button>`}
                  <button onclick="action('${q.guildId}','skip').then(poll)">⏭ Skip</button>
+                 <button class="loop-btn ${q.loopMode !== 'off' ? 'active' : ''}" onclick="action('${q.guildId}','loop').then(poll)">
+                   ${q.loopMode === 'track' ? '🔂 Loop: Track' : q.loopMode === 'queue' ? '🔁 Loop: Queue' : '➡ Loop: Off'}
+                 </button>
                  <button class="danger" onclick="action('${q.guildId}','stop').then(poll)">⏹ Stop</button>
                </div>`
             : '';
@@ -239,7 +257,13 @@
           const upcoming = q.upcoming.length
             ? `<div class="upcoming-label">Up next (${q.upcoming.length})</div>
                <ul>${q.upcoming.map((t, i) => `
-                 <li><span><span class="idx">${i + 1}.</span>${escapeHtml(t.title)}</span><span class="dur">${fmtDuration(t.duration)}</span></li>
+                 <li>
+                   <span><span class="idx">${i + 1}.</span>${escapeHtml(t.title)}</span>
+                   <span class="right">
+                     <span class="dur">${fmtDuration(t.duration)}</span>
+                     <button class="remove" onclick="removeTrack('${q.guildId}', ${i}, ${JSON.stringify(t.title)})">✕</button>
+                   </span>
+                 </li>
                `).join('')}</ul>`
             : '';
           return `<div class="guild">
