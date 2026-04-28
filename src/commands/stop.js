@@ -8,6 +8,7 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction) {
   const q = peekQueue(interaction.guildId);
   if (!q) return interaction.reply('Not in a voice channel.');
+  await q.retireNowPlayingMessage();
   q.stop();
   return interaction.reply('⏹ Stopped and disconnected.');
 }

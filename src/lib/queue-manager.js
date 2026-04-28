@@ -196,6 +196,7 @@ class GuildQueue {
 
     if (!nextTrack) {
       this.current = null;
+      await this.retireNowPlayingMessage();
       this.#cleanup();
       return;
     }
