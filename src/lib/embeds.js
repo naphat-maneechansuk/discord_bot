@@ -203,19 +203,43 @@ export function controlsRows({ paused = false, loopMode = 'off', shuffle = false
   return [row1, row2, row3];
 }
 
-export function queueRemoveRow(tracks) {
+function trackOptions(tracks, emoji) {
+  return tracks.slice(0, 25).map((t, i) => ({
+    label: `${i + 1}. ${t.title}`.slice(0, 100),
+    description: `${formatDuration(t.duration)}${t.requestedBy ? ` · ${t.requestedBy}` : ''}`.slice(0, 100),
+    value: String(i),
+    emoji,
+  }));
+}
+
+export function queueJumpRow(tracks) {
+  if (!tracks || tracks.length === 0) return null;
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('music:jump')
+    .setPlaceholder(`▶️ Jump to a track (${tracks.length})...`)
+    .addOptions(trackOptions(tracks, '▶️'));
+  return new ActionRowBuilder().addComponents(select);
+}
+
+export function queueMoveRow(tracks) {
+  if (!tracks || tracks.length < 2) return null;
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('music:move')
+    .setPlaceholder(`⬆️ Move a track to play next (${tracks.length})...`)
+    .addOptions(trackOptions(tracks.slice(1), '⬆️').map((opt, i) => ({
+      ...opt,
+      label: `${i + 2}. ${tracks[i + 1].title}`.slice(0, 100),
+      value: String(i + 1),
+    })));
+  return new ActionRowBuilder().addComponents(select);
+}
+
+export function removeSelect(tracks) {
   if (!tracks || tracks.length === 0) return null;
   const select = new StringSelectMenuBuilder()
     .setCustomId('music:remove')
-    .setPlaceholder(`🗑️ Remove a track from queue (${tracks.length})...`)
-    .addOptions(
-      tracks.slice(0, 25).map((t, i) => ({
-        label: `${i + 1}. ${t.title}`.slice(0, 100),
-        description: `${formatDuration(t.duration)}${t.requestedBy ? ` · ${t.requestedBy}` : ''}`.slice(0, 100),
-        value: String(i),
-        emoji: '🗑️',
-      })),
-    );
+    .setPlaceholder(`🗑️ Choose a track to remove (${tracks.length})...`)
+    .addOptions(trackOptions(tracks, '🗑️'));
   return new ActionRowBuilder().addComponents(select);
 }
 
@@ -227,7 +251,9 @@ export function nowPlayingComponents(queue) {
     shuffle: queue.shuffle,
     hasHistory: queue.history.length > 0,
   });
-  const removeRow = queueRemoveRow(queue.tracks);
-  if (removeRow) rows.push(removeRow);
+  const jumpRow = queueJumpRow(queue.tracks);
+  if (jumpRow) rows.push(jumpRow);
+  const moveRow = queueMoveRow(queue.tracks);
+  if (moveRow) rows.push(moveRow);
   return rows;
 }

@@ -119,6 +119,25 @@ class GuildQueue {
     return removed;
   }
 
+  jumpTo(index) {
+    if (index < 0 || index >= this.tracks.length) return false;
+    const skipped = this.tracks.splice(0, index);
+    for (const t of skipped) {
+      this.history.push(t);
+      if (this.history.length > 50) this.history.shift();
+    }
+    this._idleOverride = { loop: 'off', shuffle: false };
+    this.player.stop();
+    return true;
+  }
+
+  moveToNext(index) {
+    if (index <= 0 || index >= this.tracks.length) return false;
+    const [t] = this.tracks.splice(index, 1);
+    this.tracks.unshift(t);
+    return true;
+  }
+
   skip() {
     this.player.stop();
   }
@@ -151,19 +170,24 @@ class GuildQueue {
   }
 
   async #onIdle() {
+    const override = this._idleOverride;
+    this._idleOverride = null;
+    const loop = override?.loop ?? this.loopMode;
+    const shuffle = override?.shuffle ?? this.shuffle;
+
     let nextTrack;
     let notify = true;
 
-    if (this.loopMode === 'track' && this.current) {
+    if (loop === 'track' && this.current) {
       nextTrack = this.current;
       notify = false;
     } else {
       if (this.current) {
         this.history.push(this.current);
         if (this.history.length > 50) this.history.shift();
-        if (this.loopMode === 'queue') this.tracks.push(this.current);
+        if (loop === 'queue') this.tracks.push(this.current);
       }
-      if (this.shuffle && this.tracks.length > 1) {
+      if (shuffle && this.tracks.length > 1) {
         const idx = Math.floor(Math.random() * this.tracks.length);
         [this.tracks[0], this.tracks[idx]] = [this.tracks[idx], this.tracks[0]];
       }
