@@ -64,12 +64,13 @@ export async function execute(interaction) {
   if (!queue.current) {
     await queue.start();
     await queue.retireNowPlayingMessage();
-    const reply = await interaction.followUp({
+    await interaction.followUp({ embeds: [queuedEmbed(track, 1)] });
+    const npMsg = await interaction.channel.send({
       embeds: [nowPlayingEmbed(track, { queue, progressSeconds: 0 })],
       components: nowPlayingComponents(queue),
     });
-    queue.nowPlayingMessage = reply;
-    return reply;
+    queue.nowPlayingMessage = npMsg;
+    return;
   }
   await queue.refreshNowPlayingMessage();
   return interaction.followUp({ embeds: [queuedEmbed(track, queue.tracks.length)] });

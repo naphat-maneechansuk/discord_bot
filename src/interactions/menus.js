@@ -55,12 +55,16 @@ async function handleSearchPick(interaction) {
   if (!queue.current) {
     await queue.start();
     await queue.retireNowPlayingMessage();
-    const reply = await interaction.editReply({
+    await interaction.editReply({
+      embeds: [queuedEmbed(track, 1)],
+      components: [],
+    });
+    const npMsg = await interaction.channel.send({
       embeds: [nowPlayingEmbed(track, { queue, progressSeconds: 0 })],
       components: nowPlayingComponents(queue),
     });
-    queue.nowPlayingMessage = reply;
-    return reply;
+    queue.nowPlayingMessage = npMsg;
+    return;
   }
   await queue.refreshNowPlayingMessage();
   return interaction.editReply({
