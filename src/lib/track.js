@@ -5,6 +5,9 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const YT_DLP = join(__dirname, '..', '..', 'node_modules', 'youtube-dl-exec', 'bin', 'yt-dlp.exe');
 
+const COOKIES_PATH = process.env.YTDLP_COOKIES;
+export const COOKIES_ARGS = COOKIES_PATH ? ['--cookies', COOKIES_PATH] : [];
+
 export async function resolveTrack(query, requestedBy) {
   const source = query.startsWith('http') ? query : `ytsearch1:${query}`;
   const meta = await dumpJson(source);
@@ -20,7 +23,7 @@ export async function resolveTrack(query, requestedBy) {
 
 function dumpJson(source) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(YT_DLP, [source, '--dump-json', '--no-playlist', '--no-warnings', '--quiet'], {
+    const proc = spawn(YT_DLP, [source, '--dump-json', '--no-playlist', '--no-warnings', '--quiet', ...COOKIES_ARGS], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let out = '';
@@ -43,7 +46,7 @@ export function searchTracks(query, limit = 5) {
   return new Promise((resolve, reject) => {
     const proc = spawn(
       YT_DLP,
-      [`ytsearch${limit}:${query}`, '--dump-json', '--no-playlist', '--no-warnings', '--quiet'],
+      [`ytsearch${limit}:${query}`, '--dump-json', '--no-playlist', '--no-warnings', '--quiet', ...COOKIES_ARGS],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     let out = '';

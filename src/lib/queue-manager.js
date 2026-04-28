@@ -8,7 +8,7 @@ import {
   entersState,
 } from '@discordjs/voice';
 import { spawn } from 'node:child_process';
-import { YT_DLP } from './track.js';
+import { YT_DLP, COOKIES_ARGS } from './track.js';
 import { nowPlayingEmbed, nowPlayingComponents } from './embeds.js';
 
 const queues = new Map();
@@ -218,7 +218,7 @@ class GuildQueue {
 
     const ytProcess = spawn(
       YT_DLP,
-      [next.source, '-f', 'bestaudio[ext=webm]/bestaudio/best', '-o', '-', '--no-playlist', '--quiet', '--no-warnings'],
+      [next.source, '-f', 'bestaudio[ext=webm]/bestaudio/best', '-o', '-', '--no-playlist', '--quiet', '--no-warnings', ...COOKIES_ARGS],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     ytProcess.on('error', (err) => console.error('[yt-dlp spawn]', err));
