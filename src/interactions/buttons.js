@@ -28,6 +28,14 @@ export async function handleMusicButton(interaction) {
   const ephemeralEmbed = (kind, text) =>
     interaction.reply({ embeds: [notify(kind, text)], flags: MessageFlags.Ephemeral });
 
+  if (action === 'jpage-' || action === 'jpage+') {
+    if (!q || q.tracks.length <= 25) {
+      return interaction.deferUpdate();
+    }
+    q.setJumpPage(q.jumpPage + (action === 'jpage+' ? 1 : -1));
+    return interaction.update(rebuiltCard(q));
+  }
+
   if (action === 'queue') {
     if (!q || (!q.current && q.tracks.length === 0)) {
       return interaction.reply({ content: 'Queue is empty.', flags: MessageFlags.Ephemeral });

@@ -203,22 +203,54 @@ export function controlsRows({ paused = false, loopMode = 'off', shuffle = false
   return [row1, row2, row3];
 }
 
-function trackOptions(tracks, emoji) {
+function trackOptions(tracks, emoji, offset = 0) {
   return tracks.slice(0, 25).map((t, i) => ({
-    label: `${i + 1}. ${t.title}`.slice(0, 100),
+    label: `${offset + i + 1}. ${t.title}`.slice(0, 100),
     description: `${formatDuration(t.duration)}${t.requestedBy ? ` · ${t.requestedBy}` : ''}`.slice(0, 100),
-    value: String(i),
+    value: String(offset + i),
     emoji,
   }));
 }
 
-export function queueJumpRow(tracks) {
+export function queueJumpRow(tracks, page = 0) {
   if (!tracks || tracks.length === 0) return null;
+  const totalPages = Math.ceil(tracks.length / 25);
+  const safePage = Math.max(0, Math.min(page, totalPages - 1));
+  const offset = safePage * 25;
+  const slice = tracks.slice(offset, offset + 25);
+  const placeholder =
+    totalPages > 1
+      ? `▶️ Jump to a track (page ${safePage + 1}/${totalPages}, ${tracks.length} total)...`
+      : `▶️ Jump to a track (${tracks.length})...`;
   const select = new StringSelectMenuBuilder()
     .setCustomId('music:jump')
-    .setPlaceholder(`▶️ Jump to a track (${tracks.length})...`)
-    .addOptions(trackOptions(tracks, '▶️'));
+    .setPlaceholder(placeholder)
+    .addOptions(trackOptions(slice, '▶️', offset));
   return new ActionRowBuilder().addComponents(select);
+}
+
+export function jumpPageRow(tracks, page = 0) {
+  if (!tracks || tracks.length <= 25) return null;
+  const totalPages = Math.ceil(tracks.length / 25);
+  const safePage = Math.max(0, Math.min(page, totalPages - 1));
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId('music:jpage-')
+      .setLabel('◀ Prev page')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(safePage === 0),
+    new ButtonBuilder()
+      .setCustomId('music:jpage-info')
+      .setLabel(`Page ${safePage + 1}/${totalPages}`)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(true),
+    new ButtonBuilder()
+      .setCustomId('music:jpage+')
+      .setLabel('Next page ▶')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(safePage >= totalPages - 1),
+  );
+  return row;
 }
 
 export function removeSelect(tracks) {
@@ -238,7 +270,9 @@ export function nowPlayingComponents(queue) {
     shuffle: queue.shuffle,
     hasHistory: queue.history.length > 0,
   });
-  const jumpRow = queueJumpRow(queue.tracks);
+  const jumpRow = queueJumpRow(queue.tracks, queue.jumpPage);
   if (jumpRow) rows.push(jumpRow);
+  const pageRow = jumpPageRow(queue.tracks, queue.jumpPage);
+  if (pageRow) rows.push(pageRow);
   return rows;
 }

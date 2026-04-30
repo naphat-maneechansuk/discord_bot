@@ -33,6 +33,13 @@ class GuildQueue {
     this.shuffle = false;
     this.volume = 1.0;
     this.currentResource = null;
+    this.jumpPage = 0;
+  }
+
+  setJumpPage(page) {
+    const maxPage = Math.max(0, Math.ceil(this.tracks.length / 25) - 1);
+    this.jumpPage = Math.max(0, Math.min(page, maxPage));
+    return this.jumpPage;
   }
 
   toggleShuffle() {
