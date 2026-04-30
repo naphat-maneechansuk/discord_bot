@@ -3,3 +3,5 @@ node_modules/
 *.log
 .DS_Store
 cookies.txt
+assets/*/*
+!assets/*/README.md
