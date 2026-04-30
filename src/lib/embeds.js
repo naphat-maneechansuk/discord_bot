@@ -221,19 +221,6 @@ export function queueJumpRow(tracks) {
   return new ActionRowBuilder().addComponents(select);
 }
 
-export function queueMoveRow(tracks) {
-  if (!tracks || tracks.length < 2) return null;
-  const select = new StringSelectMenuBuilder()
-    .setCustomId('music:move')
-    .setPlaceholder(`⬆️ Move a track to play next (${tracks.length})...`)
-    .addOptions(trackOptions(tracks.slice(1), '⬆️').map((opt, i) => ({
-      ...opt,
-      label: `${i + 2}. ${tracks[i + 1].title}`.slice(0, 100),
-      value: String(i + 1),
-    })));
-  return new ActionRowBuilder().addComponents(select);
-}
-
 export function removeSelect(tracks) {
   if (!tracks || tracks.length === 0) return null;
   const select = new StringSelectMenuBuilder()
@@ -253,7 +240,5 @@ export function nowPlayingComponents(queue) {
   });
   const jumpRow = queueJumpRow(queue.tracks);
   if (jumpRow) rows.push(jumpRow);
-  const moveRow = queueMoveRow(queue.tracks);
-  if (moveRow) rows.push(moveRow);
   return rows;
 }

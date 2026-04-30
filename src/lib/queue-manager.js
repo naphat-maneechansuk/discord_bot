@@ -131,13 +131,6 @@ class GuildQueue {
     return true;
   }
 
-  moveToNext(index) {
-    if (index <= 0 || index >= this.tracks.length) return false;
-    const [t] = this.tracks.splice(index, 1);
-    this.tracks.unshift(t);
-    return true;
-  }
-
   skip() {
     this.player.stop();
   }

@@ -14,7 +14,6 @@ export async function handleMusicSelect(interaction) {
   if (action === 'search') return handleSearchPick(interaction);
   if (action === 'remove') return handleRemove(interaction);
   if (action === 'jump') return handleJump(interaction);
-  if (action === 'move') return handleMove(interaction);
 }
 
 async function handleSearchPick(interaction) {
@@ -119,40 +118,3 @@ async function handleJump(interaction) {
   });
 }
 
-async function handleMove(interaction) {
-  const q = peekQueue(interaction.guildId);
-  if (!q?.current) {
-    return interaction.reply({
-      embeds: [notify('error', 'Nothing playing.')],
-      flags: MessageFlags.Ephemeral,
-    });
-  }
-  const idx = parseInt(interaction.values[0], 10);
-  const target = q.tracks[idx];
-  if (!target) {
-    return interaction.reply({
-      embeds: [notify('error', 'Track no longer in queue.')],
-      flags: MessageFlags.Ephemeral,
-    });
-  }
-  if (!q.moveToNext(idx)) {
-    return interaction.reply({
-      embeds: [notify('error', 'Move failed.')],
-      flags: MessageFlags.Ephemeral,
-    });
-  }
-  await interaction.update({
-    embeds: [
-      nowPlayingEmbed(q.current, {
-        paused: q.status() === 'paused',
-        queue: q,
-        progressSeconds: q.getProgressSeconds(),
-      }),
-    ],
-    components: nowPlayingComponents(q),
-  });
-  await interaction.followUp({
-    embeds: [notify('success', `Moved to next: ${target.title}`)],
-    flags: MessageFlags.Ephemeral,
-  });
-}
