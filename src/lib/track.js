@@ -42,6 +42,64 @@ function dumpJson(source) {
   });
 }
 
+export function isPlaylistUrl(url) {
+  try {
+    const u = new URL(url);
+    const list = u.searchParams.get('list');
+    const v = u.searchParams.get('v');
+    return !!list && !v;
+  } catch {
+    return false;
+  }
+}
+
+export function resolvePlaylist(url, requestedBy, limit = 100) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(
+      YT_DLP,
+      [
+        url,
+        '--flat-playlist',
+        '--dump-json',
+        '--playlist-end',
+        String(limit),
+        '--no-warnings',
+        '--quiet',
+        ...COOKIES_ARGS,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    let out = '';
+    let err = '';
+    proc.stdout.on('data', (c) => (out += c));
+    proc.stderr.on('data', (c) => (err += c));
+    proc.on('close', (code) => {
+      if (code !== 0) return reject(new Error(`yt-dlp exited ${code}: ${err.trim()}`));
+      try {
+        const tracks = out
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => {
+            const m = JSON.parse(line);
+            return {
+              source: m.webpage_url || m.url || `https://www.youtube.com/watch?v=${m.id}`,
+              title: m.title ?? '(unknown)',
+              artist: m.uploader ?? m.channel ?? '',
+              duration: m.duration ?? 0,
+              thumbnail: m.thumbnails?.[0]?.url ?? null,
+              requestedBy,
+            };
+          });
+        resolve(tracks);
+      } catch (e) {
+        reject(e);
+      }
+    });
+    proc.on('error', reject);
+  });
+}
+
 export function searchTracks(query, limit = 5) {
   return new Promise((resolve, reject) => {
     const proc = spawn(

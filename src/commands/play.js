@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { getQueue } from '../lib/queue-manager.js';
-import { resolveTrack, searchTracks } from '../lib/track.js';
+import { resolveTrack, resolvePlaylist, isPlaylistUrl, searchTracks } from '../lib/track.js';
 import {
   nowPlayingEmbed,
   queuedEmbed,
@@ -43,13 +43,6 @@ export async function execute(interaction) {
     });
   }
 
-  let track;
-  try {
-    track = await resolveTrack(query, interaction.user.tag);
-  } catch (err) {
-    return interaction.followUp(`Failed to resolve track: ${err.message}`);
-  }
-
   const queue = getQueue(interaction.guildId);
   queue.textChannel = interaction.channel;
 
@@ -57,6 +50,40 @@ export async function execute(interaction) {
     await queue.ensureConnection(voiceChannel);
   } catch (err) {
     return interaction.followUp(`Failed to join voice: ${err.message}`);
+  }
+
+  if (isPlaylistUrl(query)) {
+    let tracks;
+    try {
+      tracks = await resolvePlaylist(query, interaction.user.tag);
+    } catch (err) {
+      return interaction.followUp(`Failed to load playlist: ${err.message}`);
+    }
+    if (!tracks.length) return interaction.followUp('Playlist is empty.');
+
+    const startedEmpty = !queue.current;
+    for (const t of tracks) queue.enqueue(t);
+
+    if (startedEmpty) {
+      await queue.start();
+      await queue.retireNowPlayingMessage();
+      await interaction.followUp(`📃 Loaded **${tracks.length}** tracks from playlist.`);
+      const npMsg = await interaction.channel.send({
+        embeds: [nowPlayingEmbed(queue.current, { queue, progressSeconds: 0 })],
+        components: nowPlayingComponents(queue),
+      });
+      queue.nowPlayingMessage = npMsg;
+      return;
+    }
+    await queue.refreshNowPlayingMessage();
+    return interaction.followUp(`📃 Added **${tracks.length}** tracks to queue.`);
+  }
+
+  let track;
+  try {
+    track = await resolveTrack(query, interaction.user.tag);
+  } catch (err) {
+    return interaction.followUp(`Failed to resolve track: ${err.message}`);
   }
 
   queue.enqueue(track);
