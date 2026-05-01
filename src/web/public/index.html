@@ -79,6 +79,15 @@
         padding: 8px 12px; border-radius: 6px; font-size: 13px;
       }
       input[type=text]:focus { outline: none; border-color: var(--accent); }
+      select {
+        background: var(--bg); color: var(--text); border: 1px solid var(--border);
+        padding: 8px 12px; border-radius: 6px; font-size: 13px;
+      }
+      select:focus { outline: none; border-color: var(--accent); }
+      .join-form { display: flex; gap: 8px; flex-wrap: wrap; }
+      .join-form select { flex: 0 0 auto; min-width: 180px; }
+      .join-form input[type=text] { flex: 1; min-width: 180px; }
+      .guild.idle h2 { color: var(--muted); }
       ul { list-style: none; padding: 0; margin: 0; }
       li {
         padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px;
@@ -201,6 +210,29 @@
         } catch {}
       }
 
+      async function onJoinPlay(guildId) {
+        const channelSelect = document.getElementById(`vc-${guildId}`);
+        const input = document.getElementById(`join-${guildId}`);
+        const channelId = channelSelect.value;
+        const query = input.value.trim();
+        if (!channelId) return toast('Pick a voice channel', true);
+        if (!query) return toast('Enter a song or URL', true);
+        try {
+          const res = await fetch(`/api/guild/${guildId}/play`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ channelId, query }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error ?? 'Failed');
+          toast(`Playing: ${data.track.title}`);
+          input.value = '';
+          poll();
+        } catch (err) {
+          toast(err.message, true);
+        }
+      }
+
       async function onAdd(guildId) {
         const input = document.getElementById(`add-${guildId}`);
         const query = input.value.trim();
@@ -221,14 +253,62 @@
         showLoginScreen();
       }
 
-      function renderQueues(queues) {
+      function renderIdleGuild(g) {
+        const opts = g.voiceChannels.length
+          ? g.voiceChannels.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')
+          : '<option value="">(no voice channels)</option>';
+        return `<div class="guild idle">
+                  <h2>${escapeHtml(g.name)}</h2>
+                  <div class="upcoming-label">Not connected — pick a channel and play</div>
+                  <div class="join-form">
+                    <select id="vc-${g.id}">${opts}</select>
+                    <input type="text" id="join-${g.id}" placeholder="YouTube URL or search keywords"
+                           onkeydown="if(event.key==='Enter') onJoinPlay('${g.id}')" />
+                    <button class="primary" onclick="onJoinPlay('${g.id}')">Join + Play</button>
+                  </div>
+                </div>`;
+      }
+
+      function snapshotForms() {
+        const snap = { joinSelect: {}, joinInput: {}, addInput: {} };
+        document.querySelectorAll('select[id^="vc-"]').forEach((el) => {
+          snap.joinSelect[el.id.slice(3)] = el.value;
+        });
+        document.querySelectorAll('input[id^="join-"]').forEach((el) => {
+          snap.joinInput[el.id.slice(5)] = el.value;
+        });
+        document.querySelectorAll('input[id^="add-"]').forEach((el) => {
+          snap.addInput[el.id.slice(4)] = el.value;
+        });
+        return snap;
+      }
+
+      function restoreForms(snap) {
+        for (const [id, val] of Object.entries(snap.joinSelect)) {
+          const el = document.getElementById(`vc-${id}`);
+          if (el && [...el.options].some((o) => o.value === val)) el.value = val;
+        }
+        for (const [id, val] of Object.entries(snap.joinInput)) {
+          const el = document.getElementById(`join-${id}`);
+          if (el) el.value = val;
+        }
+        for (const [id, val] of Object.entries(snap.addInput)) {
+          const el = document.getElementById(`add-${id}`);
+          if (el) el.value = val;
+        }
+      }
+
+      function renderQueues(queues, guilds) {
         const statusEl = document.getElementById('status');
-        if (!queues || queues.length === 0) {
-          mainEl.innerHTML = '<div class="empty">No active queues. Use <code>/play</code> in Discord to start.</div>';
+        const snap = snapshotForms();
+        const activeIds = new Set((queues ?? []).map((q) => q.guildId));
+        const idleGuilds = (guilds ?? []).filter((g) => !activeIds.has(g.id));
+        if ((!queues || queues.length === 0) && idleGuilds.length === 0) {
+          mainEl.innerHTML = '<div class="empty">Bot is not in any guilds.</div>';
           if (statusEl) statusEl.textContent = `live · updated ${new Date().toLocaleTimeString()}`;
           return;
         }
-        mainEl.innerHTML = queues.map((q) => {
+        const activeHtml = (queues ?? []).map((q) => {
           const isPaused = q.status === 'paused';
           const labelText = q.status === 'paused' ? 'Paused' : q.status === 'buffering' ? 'Buffering' : 'Now playing';
           const now = q.current
@@ -271,21 +351,25 @@
                     ${now}${addForm}${upcoming}
                   </div>`;
         }).join('');
+        const idleHtml = idleGuilds.map(renderIdleGuild).join('');
+        mainEl.innerHTML = activeHtml + idleHtml;
+        restoreForms(snap);
         if (statusEl) statusEl.textContent = `live · updated ${new Date().toLocaleTimeString()}`;
       }
 
       async function poll() {
         try {
-          const res = await fetch('/api/queues');
-          if (res.status === 401) {
+          const [qRes, gRes] = await Promise.all([fetch('/api/queues'), fetch('/api/guilds')]);
+          if (qRes.status === 401 || gRes.status === 401) {
             me = null;
             if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
             renderHeader();
             showLoginScreen();
             return;
           }
-          const data = await res.json();
-          renderQueues(data);
+          const queues = await qRes.json();
+          const guilds = gRes.ok ? await gRes.json() : [];
+          renderQueues(queues, guilds);
         } catch (err) {
           const statusEl = document.getElementById('status');
           if (statusEl) statusEl.textContent = 'disconnected';

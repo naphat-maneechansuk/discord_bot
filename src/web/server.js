@@ -1,4 +1,5 @@
 import express from 'express';
+import { ChannelType } from 'discord.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { listQueues, peekQueue, getQueue } from '../lib/queue-manager.js';
@@ -28,10 +29,6 @@ function serializeQueue(q, client) {
   };
 }
 
-function userCanAccessGuild(session, guildId) {
-  return session.guildIds.includes(guildId);
-}
-
 export function startWebServer(client) {
   const app = express();
   app.use(express.json());
@@ -43,26 +40,60 @@ export function startWebServer(client) {
     redirectUri: process.env.OAUTH_REDIRECT_URI ?? `http://localhost:${PORT}/auth/callback`,
   });
 
-  app.get('/api/queues', requireAuth, (req, res) => {
-    const accessible = listQueues().filter((q) => userCanAccessGuild(req.session, q.guildId));
-    res.json(accessible.map((q) => serializeQueue(q, client)));
+  app.get('/api/queues', requireAuth, (_req, res) => {
+    res.json(listQueues().map((q) => serializeQueue(q, client)));
+  });
+
+  app.get('/api/guilds', requireAuth, (_req, res) => {
+    const guilds = client.guilds.cache.map((g) => ({
+      id: g.id,
+      name: g.name,
+      voiceChannels: g.channels.cache
+        .filter(
+          (c) =>
+            c.type === ChannelType.GuildVoice || c.type === ChannelType.GuildStageVoice,
+        )
+        .map((c) => ({ id: c.id, name: c.name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    }));
+    res.json(guilds);
+  });
+
+  app.post('/api/guild/:guildId/play', requireAuth, async (req, res) => {
+    const { channelId, query } = req.body ?? {};
+    if (!channelId || !query) {
+      return res.status(400).json({ error: 'channelId and query required' });
+    }
+    const guild = client.guilds.cache.get(req.params.guildId);
+    if (!guild) return res.status(404).json({ error: 'Guild not found' });
+    const channel = guild.channels.cache.get(channelId);
+    if (
+      !channel ||
+      (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice)
+    ) {
+      return res.status(400).json({ error: 'Voice channel not found' });
+    }
+
+    const queue = getQueue(req.params.guildId);
+    try {
+      await queue.ensureConnection(channel);
+      const track = await resolveTrack(query, req.session.globalName ?? req.session.username);
+      queue.enqueue(track);
+      if (!queue.current) await queue.start();
+      res.json({ ok: true, track: { title: track.title, duration: track.duration } });
+    } catch (err) {
+      console.error('[web] play error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
   });
 
   app.get('/api/queue/:guildId', requireAuth, (req, res) => {
-    if (!userCanAccessGuild(req.session, req.params.guildId)) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
     const q = peekQueue(req.params.guildId);
     if (!q) return res.json(null);
     res.json(serializeQueue(q, client));
   });
 
-  const guildAction = (handler) => (req, res) => {
-    if (!userCanAccessGuild(req.session, req.params.guildId)) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-    return handler(req, res);
-  };
+  const guildAction = (handler) => (req, res) => handler(req, res);
 
   app.post('/api/queue/:guildId/skip', requireAuth, guildAction((req, res) => {
     const q = peekQueue(req.params.guildId);

@@ -7,6 +7,18 @@ const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
 
 const COOKIE_NAME = 'discord_session';
 
+function adminUserIds() {
+  return (process.env.ADMIN_USER_IDS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+export function isAdmin(userId) {
+  const ids = adminUserIds();
+  return ids.length > 0 && ids.includes(userId);
+}
+
 export function parseCookies(req) {
   const header = req.headers.cookie ?? '';
   const out = {};
@@ -41,7 +53,7 @@ function buildAuthorizeUrl({ clientId, redirectUri, state }) {
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: 'identify guilds',
+    scope: 'identify',
     state,
     prompt: 'none',
   });
@@ -95,7 +107,10 @@ export function registerAuthRoutes(app, config) {
     try {
       const tokenData = await exchangeCode({ code, clientId, clientSecret, redirectUri });
       const user = await fetchDiscord('/users/@me', tokenData.access_token);
-      const guilds = await fetchDiscord('/users/@me/guilds', tokenData.access_token);
+
+      if (!isAdmin(user.id)) {
+        return res.status(403).send('Forbidden: not an admin');
+      }
 
       const sid = crypto.randomBytes(32).toString('hex');
       sessions.set(sid, {
@@ -103,7 +118,6 @@ export function registerAuthRoutes(app, config) {
         username: user.username,
         globalName: user.global_name ?? user.username,
         avatar: user.avatar,
-        guildIds: guilds.map((g) => g.id),
         accessToken: tokenData.access_token,
         expiresAt: Date.now() + SESSION_TTL,
       });
