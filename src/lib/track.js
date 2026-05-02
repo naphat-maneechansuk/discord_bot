@@ -47,8 +47,6 @@ export function isPlaylistUrl(url) {
     const u = new URL(url);
     const list = u.searchParams.get('list');
     if (!list) return false;
-    // Skip auto-generated radio/mix lists — they're effectively infinite.
-    if (/^(RD|UL|PU|OL)/.test(list)) return false;
     return true;
   } catch {
     return false;
