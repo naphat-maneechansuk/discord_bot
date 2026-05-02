@@ -12,6 +12,8 @@ import { YT_DLP, COOKIES_ARGS } from './track.js';
 import { nowPlayingEmbed, nowPlayingComponents } from './embeds.js';
 import { playFarewell } from './farewell.js';
 
+export const MAX_QUEUE = 500;
+
 const queues = new Map();
 
 class GuildQueue {
@@ -102,7 +104,9 @@ class GuildQueue {
   }
 
   enqueue(track) {
+    if (this.tracks.length >= MAX_QUEUE) return false;
     this.tracks.push(track);
+    return true;
   }
 
   async start() {

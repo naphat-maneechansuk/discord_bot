@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
-import { getQueue } from '../lib/queue-manager.js';
+import { getQueue, MAX_QUEUE } from '../lib/queue-manager.js';
 import { resolveTrack, resolvePlaylist, isPlaylistUrl, searchTracks } from '../lib/track.js';
 import {
   nowPlayingEmbed,
@@ -62,12 +62,21 @@ export async function execute(interaction) {
     if (!tracks.length) return interaction.followUp('Playlist is empty.');
 
     const startedEmpty = !queue.current;
-    for (const t of tracks) queue.enqueue(t);
+    let added = 0;
+    let rejected = 0;
+    for (const t of tracks) {
+      if (queue.enqueue(t)) added++;
+      else rejected++;
+    }
+    if (added === 0) {
+      return interaction.followUp(`Queue is full (max ${MAX_QUEUE}). Nothing added.`);
+    }
+    const suffix = rejected > 0 ? ` (skipped ${rejected} — queue cap ${MAX_QUEUE})` : '';
 
     if (startedEmpty) {
       await queue.start();
       await queue.retireNowPlayingMessage();
-      await interaction.followUp(`📃 Loaded **${tracks.length}** tracks from playlist.`);
+      await interaction.followUp(`📃 Loaded **${added}** tracks from playlist.${suffix}`);
       const npMsg = await interaction.channel.send({
         embeds: [nowPlayingEmbed(queue.current, { queue, progressSeconds: 0 })],
         components: nowPlayingComponents(queue),
@@ -76,7 +85,7 @@ export async function execute(interaction) {
       return;
     }
     await queue.refreshNowPlayingMessage();
-    return interaction.followUp(`📃 Added **${tracks.length}** tracks to queue.`);
+    return interaction.followUp(`📃 Added **${added}** tracks to queue.${suffix}`);
   }
 
   let track;
@@ -86,7 +95,9 @@ export async function execute(interaction) {
     return interaction.followUp(`Failed to resolve track: ${err.message}`);
   }
 
-  queue.enqueue(track);
+  if (!queue.enqueue(track)) {
+    return interaction.followUp(`Queue is full (max ${MAX_QUEUE}).`);
+  }
 
   if (!queue.current) {
     await queue.start();
