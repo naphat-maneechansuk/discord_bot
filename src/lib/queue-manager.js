@@ -132,11 +132,8 @@ class GuildQueue {
 
   jumpTo(index) {
     if (index < 0 || index >= this.tracks.length) return false;
-    const skipped = this.tracks.splice(0, index);
-    for (const t of skipped) {
-      this.history.push(t);
-      if (this.history.length > 50) this.history.shift();
-    }
+    const [track] = this.tracks.splice(index, 1);
+    this.tracks.unshift(track);
     this._idleOverride = { loop: 'off', shuffle: false };
     this.player.stop();
     return true;
