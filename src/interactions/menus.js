@@ -6,6 +6,7 @@ import {
   queuedEmbed,
   nowPlayingComponents,
   notify,
+  friendlyErrorEmbed,
 } from '../lib/embeds.js';
 
 export async function handleMusicSelect(interaction) {
@@ -33,6 +34,10 @@ async function handleSearchPick(interaction) {
   try {
     track = await resolveTrack(url, interaction.user.tag);
   } catch (err) {
+    const card = friendlyErrorEmbed(err);
+    if (card) {
+      return interaction.editReply({ content: '', embeds: [card], components: [] });
+    }
     return interaction.editReply({ content: `Failed: ${err.message}`, embeds: [], components: [] });
   }
 

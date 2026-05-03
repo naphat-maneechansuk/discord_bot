@@ -7,6 +7,7 @@ import {
   nowPlayingComponents,
   searchResultsEmbed,
   searchResultsSelect,
+  friendlyErrorEmbed,
 } from '../lib/embeds.js';
 
 export const data = new SlashCommandBuilder()
@@ -34,6 +35,8 @@ export async function execute(interaction) {
     try {
       results = await searchTracks(query, 5);
     } catch (err) {
+      const card = friendlyErrorEmbed(err);
+      if (card) return interaction.followUp({ embeds: [card] });
       return interaction.followUp(`Search failed: ${err.message}`);
     }
     if (!results.length) return interaction.followUp(`No results for "${query}".`);
@@ -57,6 +60,8 @@ export async function execute(interaction) {
     try {
       tracks = await resolvePlaylist(query, interaction.user.tag);
     } catch (err) {
+      const card = friendlyErrorEmbed(err);
+      if (card) return interaction.followUp({ embeds: [card] });
       return interaction.followUp(`Failed to load playlist: ${err.message}`);
     }
     if (!tracks.length) return interaction.followUp('Playlist is empty.');
@@ -92,6 +97,8 @@ export async function execute(interaction) {
   try {
     track = await resolveTrack(query, interaction.user.tag);
   } catch (err) {
+    const card = friendlyErrorEmbed(err);
+    if (card) return interaction.followUp({ embeds: [card] });
     return interaction.followUp(`Failed to resolve track: ${err.message}`);
   }
 

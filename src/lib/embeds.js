@@ -129,6 +129,163 @@ export function searchResultsSelect(results) {
   return new ActionRowBuilder().addComponents(select);
 }
 
+const ERROR_RULES = [
+  {
+    kind: 'cookie',
+    patterns: [
+      /Sign in to confirm you'?re not a bot/i,
+      /Sign in to confirm your age/i,
+      /require authentication/i,
+      /cookies are no longer valid/i,
+      /HTTP Error 401/i,
+      /Private video/i,
+      /members?-only/i,
+      /Use --cookies/i,
+      /Requested format is not available/i,
+    ],
+    build: () =>
+      new EmbedBuilder()
+        .setColor(COLOR_STOPPED)
+        .setAuthor({ name: '🍪 Cookie หมดอายุ' })
+        .setTitle('ไม่สามารถโหลดเพลงจาก YouTube ได้')
+        .setDescription(
+          'Cookie ที่บอทใช้ยืนยันตัวตนกับ YouTube หมดอายุแล้ว\n' +
+            'กรุณาแจ้งเจ้าของบอทให้เปลี่ยน `cookies.txt` ใหม่',
+        )
+        .setFooter({ text: 'YouTube cookie expired — owner action required' }),
+  },
+  {
+    kind: 'unavailable',
+    patterns: [
+      /Video unavailable/i,
+      /This video (?:is|has been) (?:no longer available|removed|unavailable)/i,
+      /has been removed/i,
+      /removed by the uploader/i,
+      /account (?:has been )?terminated/i,
+      /violated YouTube/i,
+    ],
+    build: () =>
+      new EmbedBuilder()
+        .setColor(COLOR_STOPPED)
+        .setAuthor({ name: '🚫 วิดีโอใช้งานไม่ได้' })
+        .setTitle('เพลงนี้เล่นไม่ได้')
+        .setDescription('วิดีโอถูกลบ หรือเจ้าของตั้งเป็นส่วนตัวแล้ว ลองหาเพลงอื่นแทน'),
+  },
+  {
+    kind: 'geo',
+    patterns: [
+      /not available in your country/i,
+      /geo[- ]restricted/i,
+      /blocked it (?:in|on) copyright grounds/i,
+      /content isn'?t available in your country/i,
+    ],
+    build: () =>
+      new EmbedBuilder()
+        .setColor(COLOR_STOPPED)
+        .setAuthor({ name: '🌍 ติดข้อจำกัดภูมิภาค' })
+        .setTitle('เพลงนี้ถูกบล็อกในภูมิภาคของเซิร์ฟเวอร์')
+        .setDescription('เซิร์ฟเวอร์บอทอยู่ฟินแลนด์ และเพลงนี้บล็อกที่นั่น ลองหาเพลงอื่นแทน'),
+  },
+  {
+    kind: 'live',
+    patterns: [
+      /This live event will begin/i,
+      /Premiere will begin/i,
+      /This live stream recording is not available/i,
+      /is a live event/i,
+    ],
+    build: () =>
+      new EmbedBuilder()
+        .setColor(COLOR_WARN)
+        .setAuthor({ name: '📡 ยังไม่เริ่ม Live' })
+        .setTitle('ไลฟ์/พรีเมียร์ยังไม่เริ่ม')
+        .setDescription('วิดีโอนี้เป็นไลฟ์ที่ยังไม่ออกอากาศ ลองมาใหม่ตอนเริ่ม หรือหาคลิปอื่นแทน'),
+  },
+  {
+    kind: 'rate-limit',
+    patterns: [/HTTP Error 429/i, /Too Many Requests/i, /rate[- ]?limit/i],
+    build: () =>
+      new EmbedBuilder()
+        .setColor(COLOR_WARN)
+        .setAuthor({ name: '⏳ YouTube จำกัดการเรียก' })
+        .setTitle('โดน rate-limit ชั่วคราว')
+        .setDescription('YouTube จำกัดการเรียกข้อมูลจากบอทอยู่ รอสัก 1–2 นาทีแล้วลองใหม่'),
+  },
+  {
+    kind: 'network',
+    patterns: [
+      /HTTP Error 5\d\d/i,
+      /timed? out/i,
+      /ETIMEDOUT/i,
+      /ECONNRESET/i,
+      /ENOTFOUND/i,
+      /EAI_AGAIN/i,
+      /Unable to download (?:webpage|API page)/i,
+    ],
+    build: () =>
+      new EmbedBuilder()
+        .setColor(COLOR_WARN)
+        .setAuthor({ name: '🌐 เชื่อมต่อไม่ได้' })
+        .setTitle('เครือข่ายมีปัญหาชั่วคราว')
+        .setDescription('โหลดข้อมูลจาก YouTube ไม่สำเร็จ รอสักครู่แล้วลองใหม่'),
+  },
+  {
+    kind: 'unsupported',
+    patterns: [/Unsupported URL/i, /is not a valid URL/i, /no suitable extractor/i],
+    build: () =>
+      new EmbedBuilder()
+        .setColor(COLOR_STOPPED)
+        .setAuthor({ name: '🔗 ลิงก์ไม่รองรับ' })
+        .setTitle('บอทเปิดลิงก์นี้ไม่ได้')
+        .setDescription('รองรับเฉพาะลิงก์ YouTube หรือคำค้นหา ลองส่งลิงก์อื่นหรือพิมพ์ชื่อเพลงแทน'),
+  },
+  {
+    kind: 'no-results',
+    patterns: [/No video results/i, /No results found/i],
+    build: () =>
+      new EmbedBuilder()
+        .setColor(COLOR_WARN)
+        .setAuthor({ name: '🔎 ไม่พบผลลัพธ์' })
+        .setTitle('ค้นหาไม่เจอ')
+        .setDescription('ลองเปลี่ยนคำค้นหา หรือวางลิงก์ YouTube ตรงๆ'),
+  },
+  {
+    kind: 'spawn',
+    patterns: [/ENOENT/i, /spawn .* ENOENT/i, /yt-dlp.*not found/i],
+    build: () =>
+      new EmbedBuilder()
+        .setColor(COLOR_STOPPED)
+        .setAuthor({ name: '⚙️ บอทตั้งค่าผิด' })
+        .setTitle('ไม่พบ yt-dlp บนเซิร์ฟเวอร์')
+        .setDescription('เครื่องมือภายในของบอทหาย กรุณาแจ้งเจ้าของบอท')
+        .setFooter({ text: 'yt-dlp binary missing — owner action required' }),
+  },
+];
+
+export function classifyError(msg) {
+  if (!msg) return null;
+  for (const rule of ERROR_RULES) {
+    if (rule.patterns.some((re) => re.test(msg))) return rule.kind;
+  }
+  return null;
+}
+
+export function isCookieAuthError(msg) {
+  return classifyError(msg) === 'cookie';
+}
+
+export function friendlyErrorEmbed(err) {
+  const msg = typeof err === 'string' ? err : err?.message;
+  const kind = classifyError(msg);
+  if (!kind) return null;
+  const rule = ERROR_RULES.find((r) => r.kind === kind);
+  return rule.build();
+}
+
+export function cookieExpiredEmbed() {
+  return ERROR_RULES.find((r) => r.kind === 'cookie').build();
+}
+
 export function notify(kind, text) {
   const map = {
     success: { color: COLOR_SUCCESS, icon: '✅' },
