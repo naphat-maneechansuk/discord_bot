@@ -10,7 +10,6 @@ import {
 import { spawn } from 'node:child_process';
 import { YT_DLP, COOKIES_ARGS } from './track.js';
 import { nowPlayingEmbed, nowPlayingComponents } from './embeds.js';
-import { playFarewell } from './farewell.js';
 
 export const MAX_QUEUE = 500;
 
@@ -175,7 +174,6 @@ class GuildQueue {
   }
 
   async #onIdle() {
-    if (this._playingFarewell) return;
     const override = this._idleOverride;
     this._idleOverride = null;
     const loop = override?.loop ?? this.loopMode;
@@ -203,14 +201,6 @@ class GuildQueue {
     if (!nextTrack) {
       this.current = null;
       await this.retireNowPlayingMessage();
-      if (this.connection && this.connection.state.status !== VoiceConnectionStatus.Destroyed) {
-        this._playingFarewell = true;
-        try {
-          await playFarewell(this.player);
-        } finally {
-          this._playingFarewell = false;
-        }
-      }
       this.#cleanup();
       return;
     }
