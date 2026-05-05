@@ -79,16 +79,6 @@ export async function handleMusicButton(interaction) {
         flags: MessageFlags.Ephemeral,
       });
     }
-    case 'vol+':
-    case 'vol-': {
-      const delta = action === 'vol+' ? 0.1 : -0.1;
-      const v = q.adjustVolume(delta);
-      await interaction.update(rebuiltCard(q));
-      return interaction.followUp({
-        embeds: [notify('volume', `Volume: ${Math.round(v * 100)}%`)],
-        flags: MessageFlags.Ephemeral,
-      });
-    }
     case 'stop': {
       q.stop();
       return interaction.update({ embeds: [stoppedEmbed()], components: [] });

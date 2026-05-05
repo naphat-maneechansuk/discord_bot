@@ -32,7 +32,6 @@ class GuildQueue {
 
     this.history = [];
     this.shuffle = false;
-    this.volume = 1.0;
     this.currentResource = null;
     this.jumpPage = 0;
   }
@@ -46,17 +45,6 @@ class GuildQueue {
   toggleShuffle() {
     this.shuffle = !this.shuffle;
     return this.shuffle;
-  }
-
-  setVolume(v) {
-    v = Math.max(0, Math.min(1, v));
-    this.volume = v;
-    if (this.currentResource?.volume) this.currentResource.volume.setVolume(v);
-    return v;
-  }
-
-  adjustVolume(delta) {
-    return this.setVolume(this.volume + delta);
   }
 
   getProgressSeconds() {
@@ -219,7 +207,15 @@ class GuildQueue {
 
     const ytProcess = spawn(
       YT_DLP,
-      [next.source, '-f', 'bestaudio[ext=webm]/bestaudio/best', '-o', '-', '--no-playlist', '--quiet', '--no-warnings', ...COOKIES_ARGS],
+      [
+        next.source,
+        '-f', 'bestaudio[ext=webm][acodec=opus]/bestaudio[acodec=opus]/bestaudio[ext=webm]/bestaudio',
+        '-o', '-',
+        '--no-playlist',
+        '--quiet',
+        '--no-warnings',
+        ...COOKIES_ARGS,
+      ],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     ytProcess.on('error', (err) => console.error('[yt-dlp spawn]', err));
@@ -233,10 +229,9 @@ class GuildQueue {
     this.currentProcess = ytProcess;
 
     const resource = createAudioResource(ytProcess.stdout, {
-      inputType: StreamType.Arbitrary,
-      inlineVolume: true,
+      inputType: StreamType.WebmOpus,
+      inlineVolume: false,
     });
-    if (resource.volume) resource.volume.setVolume(this.volume);
     this.currentResource = resource;
     this.player.play(resource);
 

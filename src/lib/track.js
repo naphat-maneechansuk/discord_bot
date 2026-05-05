@@ -8,35 +8,44 @@ export const YT_DLP = join(__dirname, '..', '..', 'node_modules', 'youtube-dl-ex
 const COOKIES_PATH = process.env.YTDLP_COOKIES;
 export const COOKIES_ARGS = COOKIES_PATH ? ['--cookies', COOKIES_PATH] : [];
 
+const TRACK_FIELDS = ['webpage_url', 'title', 'artist', 'uploader', 'channel', 'duration', 'thumbnail'];
+const TRACK_TEMPLATE = TRACK_FIELDS.map((f) => `%(${f})s`).join('\t');
+
+function unNA(v) {
+  return v === 'NA' || v === '' ? null : v;
+}
+
 export async function resolveTrack(query, requestedBy) {
   const source = query.startsWith('http') ? query : `ytsearch1:${query}`;
-  const meta = await dumpJson(source);
+  const line = await printOne(source);
+  const cols = line.split('\t');
+  const get = (k) => unNA(cols[TRACK_FIELDS.indexOf(k)]);
   return {
-    source: meta.webpage_url || source,
-    title: meta.title ?? query,
-    artist: meta.artist ?? meta.uploader ?? meta.channel ?? '',
-    duration: meta.duration ?? 0,
-    thumbnail: meta.thumbnail ?? null,
+    source: get('webpage_url') || source,
+    title: get('title') ?? query,
+    artist: get('artist') ?? get('uploader') ?? get('channel') ?? '',
+    duration: Number(get('duration')) || 0,
+    thumbnail: get('thumbnail'),
     requestedBy,
   };
 }
 
-function dumpJson(source) {
+function printOne(source) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(YT_DLP, [source, '--dump-json', '--no-playlist', '--no-warnings', '--quiet', ...COOKIES_ARGS], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const proc = spawn(
+      YT_DLP,
+      [source, '--print', TRACK_TEMPLATE, '--no-playlist', '--no-warnings', '--quiet', ...COOKIES_ARGS],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
     let out = '';
     let err = '';
     proc.stdout.on('data', (c) => (out += c));
     proc.stderr.on('data', (c) => (err += c));
     proc.on('close', (code) => {
       if (code !== 0) return reject(new Error(`yt-dlp exited ${code}: ${err.trim()}`));
-      try {
-        resolve(JSON.parse(out.trim().split('\n')[0]));
-      } catch (e) {
-        reject(e);
-      }
+      const first = out.trim().split('\n')[0];
+      if (!first) return reject(new Error('yt-dlp returned empty output'));
+      resolve(first);
     });
     proc.on('error', reject);
   });
@@ -53,6 +62,9 @@ export function isPlaylistUrl(url) {
   }
 }
 
+const PLAYLIST_FIELDS = ['webpage_url', 'url', 'id', 'title', 'uploader', 'channel', 'duration', 'thumbnail'];
+const PLAYLIST_TEMPLATE = PLAYLIST_FIELDS.map((f) => `%(${f})s`).join('\t');
+
 export function resolvePlaylist(url, requestedBy, limit = 100) {
   return new Promise((resolve, reject) => {
     const proc = spawn(
@@ -60,7 +72,8 @@ export function resolvePlaylist(url, requestedBy, limit = 100) {
       [
         url,
         '--flat-playlist',
-        '--dump-json',
+        '--print',
+        PLAYLIST_TEMPLATE,
         '--playlist-end',
         String(limit),
         '--no-warnings',
@@ -81,13 +94,14 @@ export function resolvePlaylist(url, requestedBy, limit = 100) {
           .split('\n')
           .filter(Boolean)
           .map((line) => {
-            const m = JSON.parse(line);
+            const cols = line.split('\t');
+            const get = (k) => unNA(cols[PLAYLIST_FIELDS.indexOf(k)]);
             return {
-              source: m.webpage_url || m.url || `https://www.youtube.com/watch?v=${m.id}`,
-              title: m.title ?? '(unknown)',
-              artist: m.uploader ?? m.channel ?? '',
-              duration: m.duration ?? 0,
-              thumbnail: m.thumbnails?.[0]?.url ?? null,
+              source: get('webpage_url') || get('url') || `https://www.youtube.com/watch?v=${get('id')}`,
+              title: get('title') ?? '(unknown)',
+              artist: get('uploader') ?? get('channel') ?? '',
+              duration: Number(get('duration')) || 0,
+              thumbnail: get('thumbnail'),
               requestedBy,
             };
           });
@@ -100,11 +114,14 @@ export function resolvePlaylist(url, requestedBy, limit = 100) {
   });
 }
 
+const SEARCH_FIELDS = ['webpage_url', 'id', 'title', 'duration', 'thumbnail', 'channel', 'uploader'];
+const SEARCH_TEMPLATE = SEARCH_FIELDS.map((f) => `%(${f})s`).join('\t');
+
 export function searchTracks(query, limit = 5) {
   return new Promise((resolve, reject) => {
     const proc = spawn(
       YT_DLP,
-      [`ytsearch${limit}:${query}`, '--dump-json', '--no-playlist', '--no-warnings', '--quiet', ...COOKIES_ARGS],
+      [`ytsearch${limit}:${query}`, '--print', SEARCH_TEMPLATE, '--no-playlist', '--no-warnings', '--quiet', ...COOKIES_ARGS],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     let out = '';
@@ -119,13 +136,14 @@ export function searchTracks(query, limit = 5) {
           .split('\n')
           .filter(Boolean)
           .map((line) => {
-            const m = JSON.parse(line);
+            const cols = line.split('\t');
+            const get = (k) => unNA(cols[SEARCH_FIELDS.indexOf(k)]);
             return {
-              title: m.title ?? '(no title)',
-              source: m.webpage_url ?? `https://www.youtube.com/watch?v=${m.id}`,
-              duration: m.duration ?? 0,
-              thumbnail: m.thumbnail ?? null,
-              channel: m.channel ?? m.uploader ?? '',
+              title: get('title') ?? '(no title)',
+              source: get('webpage_url') ?? `https://www.youtube.com/watch?v=${get('id')}`,
+              duration: Number(get('duration')) || 0,
+              thumbnail: get('thumbnail'),
+              channel: get('channel') ?? get('uploader') ?? '',
             };
           });
         resolve(results);

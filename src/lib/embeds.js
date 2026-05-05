@@ -32,13 +32,11 @@ export function nowPlayingEmbed(track, opts = {}) {
   if (track.artist) e.setDescription(`by **${track.artist}**`);
   if (track.thumbnail) e.setThumbnail(track.thumbnail);
 
-  const volume = queue ? Math.round(queue.volume * 100) : 100;
   const shuffle = queue?.shuffle ? 'On' : 'Off';
   const loop =
     queue?.loopMode === 'track' ? 'Track' : queue?.loopMode === 'queue' ? 'Queue' : 'Off';
   e.addFields(
     { name: '⏱ Duration', value: formatDuration(track.duration), inline: true },
-    { name: '🔊 Volume', value: `${volume}%`, inline: true },
     { name: '🔀 Shuffle', value: shuffle, inline: true },
     { name: '🔁 Loop', value: loop, inline: true },
   );
@@ -295,7 +293,6 @@ export function notify(kind, text) {
     resume: { color: COLOR_SUCCESS, icon: '▶️' },
     stop: { color: COLOR_STOPPED, icon: '⏹' },
     shuffle: { color: COLOR_INFO, icon: '🔀' },
-    volume: { color: COLOR_INFO, icon: '🔊' },
     error: { color: COLOR_STOPPED, icon: '❌' },
   };
   const cfg = map[kind] ?? map.success;
@@ -353,11 +350,7 @@ export function controlsRows({ paused = false, loopMode = 'off', shuffle = false
     loopButton(loopMode),
     new ButtonBuilder().setCustomId('music:queue').setLabel('Queue').setEmoji('📋').setStyle(ButtonStyle.Primary),
   );
-  const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('music:vol-').setLabel('-10%').setEmoji('🔉').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('music:vol+').setLabel('+10%').setEmoji('🔊').setStyle(ButtonStyle.Secondary),
-  );
-  return [row1, row2, row3];
+  return [row1, row2];
 }
 
 function trackOptions(tracks, emoji, offset = 0) {
