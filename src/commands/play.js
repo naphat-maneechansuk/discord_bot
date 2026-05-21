@@ -49,21 +49,20 @@ export async function execute(interaction) {
   const queue = getQueue(interaction.guildId);
   queue.textChannel = interaction.channel;
 
-  try {
-    await queue.ensureConnection(voiceChannel);
-  } catch (err) {
-    return interaction.followUp(`Failed to join voice: ${err.message}`);
-  }
-
   if (isPlaylistUrl(query)) {
-    let tracks;
-    try {
-      tracks = await resolvePlaylist(query, interaction.user.tag);
-    } catch (err) {
-      const card = friendlyErrorEmbed(err);
-      if (card) return interaction.followUp({ embeds: [card] });
-      return interaction.followUp(`Failed to load playlist: ${err.message}`);
+    const [connRes, listRes] = await Promise.allSettled([
+      queue.ensureConnection(voiceChannel),
+      resolvePlaylist(query, interaction.user.tag),
+    ]);
+    if (connRes.status === 'rejected') {
+      return interaction.followUp(`Failed to join voice: ${connRes.reason.message}`);
     }
+    if (listRes.status === 'rejected') {
+      const card = friendlyErrorEmbed(listRes.reason);
+      if (card) return interaction.followUp({ embeds: [card] });
+      return interaction.followUp(`Failed to load playlist: ${listRes.reason.message}`);
+    }
+    const tracks = listRes.value;
     if (!tracks.length) return interaction.followUp('Playlist is empty.');
 
     const startedEmpty = !queue.current;
@@ -93,14 +92,19 @@ export async function execute(interaction) {
     return interaction.followUp(`📃 Added **${added}** tracks to queue.${suffix}`);
   }
 
-  let track;
-  try {
-    track = await resolveTrack(query, interaction.user.tag);
-  } catch (err) {
-    const card = friendlyErrorEmbed(err);
-    if (card) return interaction.followUp({ embeds: [card] });
-    return interaction.followUp(`Failed to resolve track: ${err.message}`);
+  const [connRes, trackRes] = await Promise.allSettled([
+    queue.ensureConnection(voiceChannel),
+    resolveTrack(query, interaction.user.tag),
+  ]);
+  if (connRes.status === 'rejected') {
+    return interaction.followUp(`Failed to join voice: ${connRes.reason.message}`);
   }
+  if (trackRes.status === 'rejected') {
+    const card = friendlyErrorEmbed(trackRes.reason);
+    if (card) return interaction.followUp({ embeds: [card] });
+    return interaction.followUp(`Failed to resolve track: ${trackRes.reason.message}`);
+  }
+  const track = trackRes.value;
 
   if (!queue.enqueue(track)) {
     return interaction.followUp(`Queue is full (max ${MAX_QUEUE}).`);

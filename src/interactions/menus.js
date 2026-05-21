@@ -30,29 +30,28 @@ async function handleSearchPick(interaction) {
 
   await interaction.deferUpdate();
 
-  let track;
-  try {
-    track = await resolveTrack(url, interaction.user.tag);
-  } catch (err) {
-    const card = friendlyErrorEmbed(err);
-    if (card) {
-      return interaction.editReply({ content: '', embeds: [card], components: [] });
-    }
-    return interaction.editReply({ content: `Failed: ${err.message}`, embeds: [], components: [] });
-  }
-
   const queue = getQueue(interaction.guildId);
   queue.textChannel = interaction.channel;
 
-  try {
-    await queue.ensureConnection(voiceChannel);
-  } catch (err) {
+  const [connRes, trackRes] = await Promise.allSettled([
+    queue.ensureConnection(voiceChannel),
+    resolveTrack(url, interaction.user.tag),
+  ]);
+  if (connRes.status === 'rejected') {
     return interaction.editReply({
-      content: `Failed to join voice: ${err.message}`,
+      content: `Failed to join voice: ${connRes.reason.message}`,
       embeds: [],
       components: [],
     });
   }
+  if (trackRes.status === 'rejected') {
+    const card = friendlyErrorEmbed(trackRes.reason);
+    if (card) {
+      return interaction.editReply({ content: '', embeds: [card], components: [] });
+    }
+    return interaction.editReply({ content: `Failed: ${trackRes.reason.message}`, embeds: [], components: [] });
+  }
+  const track = trackRes.value;
 
   queue.enqueue(track);
 
