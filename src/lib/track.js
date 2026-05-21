@@ -3,7 +3,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const YT_DLP = join(__dirname, '..', '..', 'node_modules', 'youtube-dl-exec', 'bin', 'yt-dlp.exe');
+const BUNDLED_YT_DLP = join(__dirname, '..', '..', 'node_modules', 'youtube-dl-exec', 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+export const YT_DLP = process.env.YTDLP_BIN || BUNDLED_YT_DLP;
 
 const COOKIES_PATH = process.env.YTDLP_COOKIES;
 export const COOKIES_ARGS = COOKIES_PATH ? ['--cookies', COOKIES_PATH] : [];
