@@ -62,6 +62,28 @@ export function queuedEmbed(track, position) {
   return e;
 }
 
+export function playlistLoadedEmbed(count, opts = {}) {
+  const { started = false, rejected = 0, maxQueue = null } = opts;
+  const e = new EmbedBuilder()
+    .setColor(COLOR_SUCCESS)
+    .setAuthor({ name: started ? '📃 Playlist — Now Playing' : '📃 Playlist — Added to Queue' })
+    .setDescription(
+      started
+        ? `Loaded **${count}** track${count === 1 ? '' : 's'} — starting playback now.`
+        : `Added **${count}** track${count === 1 ? '' : 's'} to the queue.`,
+    );
+  if (rejected > 0) {
+    e.setColor(COLOR_WARN);
+    e.addFields({
+      name: '⚠️ Skipped',
+      value: `**${rejected}** track${rejected === 1 ? '' : 's'} skipped${
+        maxQueue ? ` — queue cap is ${maxQueue}` : ''
+      }`,
+    });
+  }
+  return e;
+}
+
 export function queueListEmbed(queue) {
   const totalSec =
     (queue.current?.duration || 0) + queue.tracks.reduce((s, t) => s + (t.duration || 0), 0);

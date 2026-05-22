@@ -4,6 +4,7 @@ import { resolveTrack, resolvePlaylist, isPlaylistUrl, searchTracks } from '../l
 import {
   nowPlayingEmbed,
   queuedEmbed,
+  playlistLoadedEmbed,
   nowPlayingComponents,
   searchResultsEmbed,
   searchResultsSelect,
@@ -75,12 +76,12 @@ export async function execute(interaction) {
     if (added === 0) {
       return interaction.followUp(`Queue is full (max ${MAX_QUEUE}). Nothing added.`);
     }
-    const suffix = rejected > 0 ? ` (skipped ${rejected} — queue cap ${MAX_QUEUE})` : '';
-
     if (startedEmpty) {
       await queue.start();
       await queue.retireNowPlayingMessage();
-      await interaction.followUp(`📃 Loaded **${added}** tracks from playlist.${suffix}`);
+      await interaction.followUp({
+        embeds: [playlistLoadedEmbed(added, { started: true, rejected, maxQueue: MAX_QUEUE })],
+      });
       const npMsg = await interaction.channel.send({
         embeds: [nowPlayingEmbed(queue.current, { queue, progressSeconds: 0 })],
         components: nowPlayingComponents(queue),
@@ -89,7 +90,9 @@ export async function execute(interaction) {
       return;
     }
     await queue.refreshNowPlayingMessage();
-    return interaction.followUp(`📃 Added **${added}** tracks to queue.${suffix}`);
+    return interaction.followUp({
+      embeds: [playlistLoadedEmbed(added, { started: false, rejected, maxQueue: MAX_QUEUE })],
+    });
   }
 
   const [connRes, trackRes] = await Promise.allSettled([
