@@ -7,6 +7,7 @@ import { startWebServer } from './web/server.js';
 import { handleMusicButton } from './interactions/buttons.js';
 import { handleMusicSelect } from './interactions/menus.js';
 import { peekQueue } from './lib/queue-manager.js';
+import { flushLikes } from './lib/likes.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -63,5 +64,14 @@ client.on(Events.MessageCreate, (message) => {
   if (message.channelId !== q.nowPlayingMessage.channelId) return;
   q.bumpNowPlayingMessage();
 });
+
+// Persist any pending likes before the service restarts (deploys send SIGTERM).
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    flushLikes();
+    client.destroy();
+    process.exit(0);
+  });
+}
 
 client.login(process.env.DISCORD_TOKEN);

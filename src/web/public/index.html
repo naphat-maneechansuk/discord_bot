@@ -8,6 +8,7 @@
       :root {
         --bg: #0f1115;
         --panel: #1a1d24;
+        --panel-2: #20242e;
         --border: #2a2f3a;
         --text: #e6e8eb;
         --muted: #8b95a7;
@@ -16,6 +17,7 @@
         --green: #43b581;
         --red: #ed4245;
         --yellow: #faa61a;
+        --like: #f0476a;
       }
       * { box-sizing: border-box; }
       body {
@@ -23,36 +25,68 @@
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         background: var(--bg);
         color: var(--text);
+        line-height: 1.45;
       }
       header {
-        padding: 16px 24px;
+        padding: 14px 24px;
         border-bottom: 1px solid var(--border);
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 16px;
+        position: sticky;
+        top: 0;
+        background: rgba(15, 17, 21, 0.92);
+        backdrop-filter: blur(8px);
+        z-index: 10;
       }
-      header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+      header h1 { margin: 0; font-size: 17px; font-weight: 600; }
       .header-right { display: flex; align-items: center; gap: 12px; }
-      .status { font-size: 12px; color: var(--muted); }
+      .status { font-size: 12px; color: var(--muted); white-space: nowrap; }
       .user { display: flex; align-items: center; gap: 8px; font-size: 13px; }
       .user img { width: 28px; height: 28px; border-radius: 50%; }
-      main { padding: 24px; max-width: 900px; margin: 0 auto; }
-      .empty { text-align: center; padding: 64px 24px; color: var(--muted); }
+      main { padding: 24px; max-width: 940px; margin: 0 auto; }
+      .empty { text-align: center; padding: 56px 24px; color: var(--muted); font-size: 14px; }
+      .empty .hint { font-size: 13px; margin-top: 6px; opacity: 0.8; }
       .login-screen {
         display: flex; flex-direction: column; align-items: center; justify-content: center;
         min-height: 60vh; gap: 16px;
       }
       .login-screen h2 { margin: 0; font-size: 20px; }
       .login-screen p { color: var(--muted); margin: 0; }
-      .guild {
-        background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+
+      /* tabs */
+      .tabs {
+        display: flex; gap: 4px; margin-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+      }
+      .tab {
+        background: transparent; border: none; border-bottom: 2px solid transparent;
+        color: var(--muted); padding: 10px 16px; font-size: 14px; cursor: pointer;
+        border-radius: 0; transition: color 0.15s, border-color 0.15s;
+      }
+      .tab:hover { background: transparent; color: var(--text); }
+      .tab.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 500; }
+      .tab .badge {
+        display: inline-block; margin-left: 6px; font-size: 11px; color: var(--muted);
+        background: var(--panel-2); border-radius: 10px; padding: 1px 7px;
+      }
+
+      /* section / card */
+      .section-title {
+        font-size: 12px; color: var(--muted); text-transform: uppercase;
+        letter-spacing: 0.6px; margin: 0 0 12px 0; font-weight: 600;
+      }
+      .card {
+        background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
         padding: 20px; margin-bottom: 16px;
       }
-      .guild h2 { margin: 0 0 16px 0; font-size: 16px; font-weight: 600; }
+      .card h2 { margin: 0 0 16px 0; font-size: 16px; font-weight: 600; }
+
       .now {
         background: rgba(67, 181, 129, 0.1); border-left: 3px solid var(--green);
-        padding: 12px 16px; border-radius: 4px; margin-bottom: 12px;
+        padding: 14px 16px; border-radius: 6px; margin-bottom: 14px;
+        display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
       }
       .now.paused { background: rgba(250, 166, 26, 0.1); border-color: var(--yellow); }
       .now .label { font-size: 11px; color: var(--green); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -60,20 +94,33 @@
       .now .title { font-weight: 500; margin-top: 4px; }
       .now .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
       .controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+
       button {
-        background: var(--panel); color: var(--text); border: 1px solid var(--border);
+        background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
         padding: 8px 14px; border-radius: 6px; font-size: 13px; cursor: pointer;
-        transition: all 0.15s;
+        transition: background 0.15s, border-color 0.15s, color 0.15s;
       }
       button:hover:not(:disabled) { background: var(--border); }
+      button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       button:disabled { opacity: 0.4; cursor: not-allowed; }
-      button.primary { background: var(--accent); border-color: var(--accent); }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
       button.primary:hover:not(:disabled) { background: var(--accent-hover); }
       button.danger { color: var(--red); }
       button.danger:hover:not(:disabled) { background: rgba(237, 66, 69, 0.1); }
       button.large { padding: 12px 24px; font-size: 14px; }
       a.button { display: inline-block; text-decoration: none; }
-      .add-form { display: flex; gap: 8px; margin-bottom: 16px; }
+
+      /* like heart */
+      .like-btn {
+        background: transparent; border: none; padding: 4px 6px; cursor: pointer;
+        font-size: 18px; line-height: 1; color: var(--muted);
+        transition: transform 0.12s, color 0.12s;
+      }
+      .like-btn:hover:not(:disabled) { background: transparent; color: var(--like); transform: scale(1.15); }
+      .like-btn.liked { color: var(--like); }
+      .like-btn:focus-visible { outline: 2px solid var(--like); outline-offset: 1px; border-radius: 4px; }
+
+      .add-form { display: flex; gap: 8px; margin-bottom: 4px; }
       input[type=text] {
         flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border);
         padding: 8px 12px; border-radius: 6px; font-size: 13px;
@@ -87,34 +134,70 @@
       .join-form { display: flex; gap: 8px; flex-wrap: wrap; }
       .join-form select { flex: 0 0 auto; min-width: 180px; }
       .join-form input[type=text] { flex: 1; min-width: 180px; }
-      .guild.idle h2 { color: var(--muted); }
+      .card.idle h2 { color: var(--muted); }
+
       ul { list-style: none; padding: 0; margin: 0; }
       li {
         padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px;
-        display: flex; justify-content: space-between; gap: 12px;
+        display: flex; justify-content: space-between; gap: 12px; align-items: center;
       }
       li:last-child { border-bottom: none; }
       li .idx { color: var(--muted); margin-right: 8px; }
       li .dur { color: var(--muted); font-size: 12px; flex-shrink: 0; }
+      li .track-main { min-width: 0; }
+      li .track-main .t-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      li .track-main .t-sub { font-size: 12px; color: var(--muted); }
       li .right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-      li button.remove {
+      li button.remove, li button.small {
         padding: 4px 10px; font-size: 12px; color: var(--muted);
         background: transparent; border: 1px solid var(--border);
       }
       li button.remove:hover:not(:disabled) { color: var(--red); border-color: var(--red); background: rgba(237, 66, 69, 0.1); }
+      li button.small:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+      li button.small.play:hover:not(:disabled) { color: var(--green); border-color: var(--green); }
+
       .loop-btn.active { border-color: var(--accent); color: var(--accent); }
       .upcoming-label {
         font-size: 11px; color: var(--muted); text-transform: uppercase;
         letter-spacing: 0.5px; margin-bottom: 8px;
       }
+
+      /* friends */
+      .friend {
+        display: flex; align-items: center; gap: 12px; width: 100%;
+        background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+        padding: 12px 14px; margin-bottom: 8px; cursor: pointer; text-align: left;
+      }
+      .friend:hover:not(:disabled) { border-color: var(--accent); background: var(--border); }
+      .friend img { width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; }
+      .friend .f-name { font-size: 14px; font-weight: 500; }
+      .friend .f-meta { font-size: 12px; color: var(--muted); }
+      .friend .f-count { margin-left: auto; font-size: 13px; color: var(--muted); flex-shrink: 0; }
+      .friend .f-me {
+        font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+        background: var(--accent); color: #fff; border-radius: 4px; padding: 1px 6px; margin-left: 6px;
+      }
+
+      .play-target {
+        display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+        margin-bottom: 14px; font-size: 13px; color: var(--muted);
+      }
+
       .toast {
         position: fixed; bottom: 20px; right: 20px;
         background: var(--panel); border: 1px solid var(--border);
         padding: 10px 16px; border-radius: 6px; font-size: 13px;
-        opacity: 0; transition: opacity 0.2s;
+        opacity: 0; transition: opacity 0.2s; z-index: 50;
+        max-width: 80vw;
       }
       .toast.show { opacity: 1; }
       .toast.error { border-color: var(--red); color: var(--red); }
+
+      @media (max-width: 560px) {
+        main { padding: 16px; }
+        header { padding: 12px 16px; }
+        .now { flex-direction: column; }
+      }
     </style>
   </head>
   <body>
@@ -132,6 +215,13 @@
 
       let me = null;
       let pollHandle = null;
+      let activeTab = 'queues';
+
+      // cached data so tab switches and Likes/Friends polling don't fight each other
+      let lastQueues = [];
+      let lastGuilds = [];
+      let lastLikes = null;     // { tracks: [...] } or null = not loaded
+      let lastFriends = null;   // [...] or null = not loaded
 
       function fmtDuration(s) {
         if (!s) return '?:??';
@@ -141,9 +231,17 @@
       }
 
       function escapeHtml(str) {
-        return String(str).replace(/[&<>"']/g, (c) => ({
+        return String(str ?? '').replace(/[&<>"']/g, (c) => ({
           '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
         }[c]));
+      }
+
+      // safe encode of a track object for inline onclick handlers
+      function encodeTrack(t) {
+        return escapeHtml(JSON.stringify({
+          source: t.source, title: t.title, artist: t.artist,
+          duration: t.duration, thumbnail: t.thumbnail,
+        }));
       }
 
       let toastTimer = null;
@@ -186,6 +284,13 @@
           </div>`;
       }
 
+      function handle401() {
+        me = null;
+        if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
+        renderHeader();
+        showLoginScreen();
+      }
+
       async function action(guildId, path, body, method = 'POST') {
         try {
           const res = await fetch(`/api/queue/${guildId}/${path}`, {
@@ -193,6 +298,7 @@
             headers: { 'content-type': 'application/json' },
             body: body ? JSON.stringify(body) : undefined,
           });
+          if (res.status === 401) { handle401(); throw new Error('Session expired'); }
           const data = await res.json();
           if (!res.ok) throw new Error(data.error ?? 'Failed');
           return data;
@@ -210,6 +316,17 @@
         } catch {}
       }
 
+      // ---- target guild resolution (bot is realistically in ONE guild) ----
+      function connectedGuild() {
+        return lastQueues.find((q) => q.status && q.status !== 'idle') || lastQueues[0] || null;
+      }
+      function firstGuildId() {
+        const cg = connectedGuild();
+        if (cg) return cg.guildId;
+        if (lastGuilds.length) return lastGuilds[0].id;
+        return null;
+      }
+
       async function onJoinPlay(guildId) {
         const channelSelect = document.getElementById(`vc-${guildId}`);
         const input = document.getElementById(`join-${guildId}`);
@@ -223,6 +340,7 @@
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ channelId, query }),
           });
+          if (res.status === 401) return handle401();
           const data = await res.json();
           if (!res.ok) throw new Error(data.error ?? 'Failed');
           toast(`Playing: ${data.track.title}`);
@@ -245,6 +363,37 @@
         } catch {}
       }
 
+      // ---- Like toggle ----
+      async function toggleLike(btn, encoded) {
+        let track;
+        try { track = JSON.parse(encoded); } catch { return; }
+        if (btn) btn.disabled = true;
+        try {
+          const res = await fetch('/api/likes/toggle', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(track),
+          });
+          if (res.status === 401) return handle401();
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error ?? 'Failed');
+          toast(data.liked ? `Liked: ${track.title}` : `Removed: ${track.title}`);
+          // invalidate likes/friends caches so they re-fetch fresh
+          lastLikes = null;
+          lastFriends = null;
+          await poll();
+        } catch (err) {
+          toast(err.message ?? 'Failed', true);
+          if (btn) btn.disabled = false;
+        }
+      }
+
+      function likeBtnHtml(track, liked) {
+        return `<button class="like-btn ${liked ? 'liked' : ''}" title="${liked ? 'Unlike' : 'Like'}"
+                  aria-label="${liked ? 'Unlike' : 'Like'} ${escapeHtml(track.title)}"
+                  onclick='toggleLike(this, ${encodeTrack(track)})'>${liked ? '♥' : '♡'}</button>`;
+      }
+
       async function logout() {
         await fetch('/auth/logout', { method: 'POST' });
         me = null;
@@ -253,22 +402,29 @@
         showLoginScreen();
       }
 
-      function renderIdleGuild(g) {
-        const opts = g.voiceChannels.length
-          ? g.voiceChannels.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')
-          : '<option value="">(no voice channels)</option>';
-        return `<div class="guild idle">
-                  <h2>${escapeHtml(g.name)}</h2>
-                  <div class="upcoming-label">Not connected — pick a channel and play</div>
-                  <div class="join-form">
-                    <select id="vc-${g.id}">${opts}</select>
-                    <input type="text" id="join-${g.id}" placeholder="YouTube URL or search keywords"
-                           onkeydown="if(event.key==='Enter') onJoinPlay('${g.id}')" />
-                    <button class="primary" onclick="onJoinPlay('${g.id}')">Join + Play</button>
-                  </div>
-                </div>`;
+      // ---------- tabs ----------
+      function switchTab(tab) {
+        activeTab = tab;
+        render();
+        if (tab === 'likes' && lastLikes === null) loadLikes();
+        if (tab === 'friends' && lastFriends === null) loadFriends();
       }
 
+      function tabsHtml() {
+        const likesCount = lastLikes ? lastLikes.tracks.length : null;
+        const friendsCount = lastFriends ? lastFriends.length : null;
+        const t = (id, label, count) =>
+          `<button class="tab ${activeTab === id ? 'active' : ''}" onclick="switchTab('${id}')">
+             ${label}${count !== null && count !== undefined ? `<span class="badge">${count}</span>` : ''}
+           </button>`;
+        return `<div class="tabs">
+          ${t('queues', 'Live Queue')}
+          ${t('likes', 'My Likes', likesCount)}
+          ${t('friends', 'Friends', friendsCount)}
+        </div>`;
+      }
+
+      // ---------- forms snapshot ----------
       function snapshotForms() {
         const snap = { joinSelect: {}, joinInput: {}, addInput: {} };
         document.querySelectorAll('select[id^="vc-"]').forEach((el) => {
@@ -298,24 +454,52 @@
         }
       }
 
-      function renderQueues(queues, guilds) {
-        const statusEl = document.getElementById('status');
-        const snap = snapshotForms();
-        const activeIds = new Set((queues ?? []).map((q) => q.guildId));
-        const idleGuilds = (guilds ?? []).filter((g) => !activeIds.has(g.id));
-        if ((!queues || queues.length === 0) && idleGuilds.length === 0) {
-          mainEl.innerHTML = '<div class="empty">Bot is not in any guilds.</div>';
-          if (statusEl) statusEl.textContent = `live · updated ${new Date().toLocaleTimeString()}`;
-          return;
+      // ---------- voice channel picker (shared join UX) ----------
+      function vcOptions(guildId) {
+        const g = lastGuilds.find((x) => x.id === guildId);
+        const chans = g ? g.voiceChannels : [];
+        return chans.length
+          ? chans.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')
+          : '<option value="">(no voice channels)</option>';
+      }
+
+      // ---------- QUEUES tab ----------
+      function renderIdleGuild(g) {
+        const opts = g.voiceChannels.length
+          ? g.voiceChannels.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')
+          : '<option value="">(no voice channels)</option>';
+        return `<div class="card idle">
+                  <h2>${escapeHtml(g.name)}</h2>
+                  <div class="upcoming-label">Not connected — pick a channel and play</div>
+                  <div class="join-form">
+                    <select id="vc-${g.id}">${opts}</select>
+                    <input type="text" id="join-${g.id}" placeholder="YouTube URL or search keywords"
+                           onkeydown="if(event.key==='Enter') onJoinPlay('${g.id}')" />
+                    <button class="primary" onclick="onJoinPlay('${g.id}')">Join + Play</button>
+                  </div>
+                </div>`;
+      }
+
+      function renderQueuesTab() {
+        const queues = lastQueues;
+        const guilds = lastGuilds;
+        const activeIds = new Set(queues.map((q) => q.guildId));
+        const idleGuilds = guilds.filter((g) => !activeIds.has(g.id));
+        if (queues.length === 0 && idleGuilds.length === 0) {
+          return `<div class="empty">Bot is not in any guilds.
+            <div class="hint">Invite the bot to a server to get started.</div></div>`;
         }
-        const activeHtml = (queues ?? []).map((q) => {
+        const activeHtml = queues.map((q) => {
           const isPaused = q.status === 'paused';
           const labelText = q.status === 'paused' ? 'Paused' : q.status === 'buffering' ? 'Buffering' : 'Now playing';
           const now = q.current
             ? `<div class="now ${isPaused ? 'paused' : ''}">
-                 <div class="label">${labelText}</div>
-                 <div class="title">${escapeHtml(q.current.title)}</div>
-                 <div class="meta">${fmtDuration(q.current.duration)} · requested by ${escapeHtml(q.current.requestedBy ?? 'unknown')}</div>
+                 <div>
+                   <div class="label">${labelText}</div>
+                   <div class="title">${escapeHtml(q.current.title)}</div>
+                   <div class="meta">${fmtDuration(q.current.duration)} · requested by ${escapeHtml(q.current.requestedBy ?? 'unknown')}</div>
+                 </div>
+                 ${likeBtnHtml(q.current, q.current.likedByMe)}
                </div>
                <div class="controls">
                  ${isPaused
@@ -335,41 +519,242 @@
               <button class="primary" onclick="onAdd('${q.guildId}')">Add</button>
             </div>`;
           const upcoming = q.upcoming.length
-            ? `<div class="upcoming-label">Up next (${q.upcoming.length})</div>
+            ? `<div class="upcoming-label" style="margin-top:16px">Up next (${q.upcoming.length})</div>
                <ul>${q.upcoming.map((t, i) => `
                  <li>
-                   <span><span class="idx">${i + 1}.</span>${escapeHtml(t.title)}</span>
+                   <span class="track-main"><span class="idx">${i + 1}.</span>${escapeHtml(t.title)}</span>
                    <span class="right">
+                     ${likeBtnHtml(t, t.likedByMe)}
                      <span class="dur">${fmtDuration(t.duration)}</span>
-                     <button class="remove" onclick="removeTrack('${q.guildId}', ${i}, ${JSON.stringify(t.title)})">✕</button>
+                     <button class="remove" onclick="removeTrack('${q.guildId}', ${i}, ${JSON.stringify(escapeHtml(t.title))})">✕</button>
                    </span>
                  </li>
                `).join('')}</ul>`
             : '';
-          return `<div class="guild">
+          return `<div class="card">
                     <h2>${escapeHtml(q.guildName)}</h2>
                     ${now}${addForm}${upcoming}
                   </div>`;
         }).join('');
         const idleHtml = idleGuilds.map(renderIdleGuild).join('');
-        mainEl.innerHTML = activeHtml + idleHtml;
-        restoreForms(snap);
-        if (statusEl) statusEl.textContent = `live · updated ${new Date().toLocaleTimeString()}`;
+        return activeHtml + idleHtml;
       }
 
+      // ---------- LIKES tab ----------
+      async function loadLikes() {
+        try {
+          const res = await fetch('/api/likes');
+          if (res.status === 401) return handle401();
+          if (!res.ok) throw new Error('Failed to load likes');
+          lastLikes = await res.json();
+        } catch (err) {
+          toast(err.message ?? 'Failed to load likes', true);
+          lastLikes = { tracks: [] };
+        }
+        if (activeTab === 'likes') render();
+        else renderTabBadges();
+      }
+
+      function renderLikesTab() {
+        if (lastLikes === null) return '<div class="empty">Loading your likes...</div>';
+        const tracks = lastLikes.tracks;
+        if (!tracks.length) {
+          return `<div class="empty">No liked songs yet.
+            <div class="hint">Tap the ♡ heart on any track to add it here.</div></div>`;
+        }
+        const rows = tracks.map((t) => `
+          <li>
+            <span class="track-main">
+              <div class="t-title">${escapeHtml(t.title)}</div>
+              <div class="t-sub">${escapeHtml(t.artist ?? 'Unknown artist')} · ${fmtDuration(t.duration)}</div>
+            </span>
+            <span class="right">
+              <button class="small play" onclick='playLiked(${encodeTrack(t)})'>▶ Play</button>
+              <button class="remove" title="Unlike" onclick='unlikeFromList(this, ${encodeTrack(t)})'>♥ Unlike</button>
+            </span>
+          </li>`).join('');
+        return `<div class="card">
+                  <h2>My Liked Songs <span class="badge" style="font-size:12px;color:var(--muted)">${tracks.length}</span></h2>
+                  <ul>${rows}</ul>
+                </div>`;
+      }
+
+      async function unlikeFromList(btn, encoded) {
+        await toggleLike(btn, encoded);
+      }
+
+      // Play a single liked track. Needs an active+connected queue, else prompt for channel.
+      async function playLiked(track) {
+        const cg = connectedGuild();
+        if (cg && cg.current) {
+          // active queue exists -> just add
+          try {
+            const data = await action(cg.guildId, 'add', { query: track.source });
+            toast(`Added: ${data.track ? data.track.title : track.title}`);
+            poll();
+          } catch {}
+          return;
+        }
+        // no active queue -> need channel pick
+        const guildId = firstGuildId();
+        if (!guildId) return toast('Bot is not in any guild', true);
+        promptChannelThen(guildId, 'Play this liked song', async (channelId) => {
+          try {
+            const res = await fetch(`/api/guild/${guildId}/play`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ channelId, query: track.source }),
+            });
+            if (res.status === 401) return handle401();
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error ?? 'Failed');
+            toast(`Playing: ${data.track ? data.track.title : track.title}`);
+            poll();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        });
+      }
+
+      // ---------- FRIENDS tab ----------
+      async function loadFriends() {
+        try {
+          const res = await fetch('/api/friends');
+          if (res.status === 401) return handle401();
+          if (!res.ok) throw new Error('Failed to load friends');
+          lastFriends = await res.json();
+        } catch (err) {
+          toast(err.message ?? 'Failed to load friends', true);
+          lastFriends = [];
+        }
+        if (activeTab === 'friends') render();
+        else renderTabBadges();
+      }
+
+      function renderFriendsTab() {
+        if (lastFriends === null) return '<div class="empty">Loading friends...</div>';
+        if (!lastFriends.length) {
+          return `<div class="empty">Nobody has liked any songs yet.
+            <div class="hint">Be the first — like a track and you'll show up here.</div></div>`;
+        }
+        const rows = lastFriends.map((f) => {
+          const isMe = me && f.id === me.id;
+          const songWord = f.count === 1 ? 'song' : 'songs';
+          return `<button class="friend" onclick="playFriend('${f.id}', ${JSON.stringify(escapeHtml(f.username))})">
+                    <img src="${avatarUrl(f)}" alt="" />
+                    <span>
+                      <div class="f-name">${escapeHtml(f.username)}${isMe ? '<span class="f-me">you</span>' : ''}</div>
+                      <div class="f-meta">Tap to queue their playlist</div>
+                    </span>
+                    <span class="f-count">${f.count} ${songWord}</span>
+                  </button>`;
+        }).join('');
+        return `<div class="card">
+                  <h2>Friends &amp; Their Playlists</h2>
+                  <p class="status" style="margin:-8px 0 14px">Everyone who has liked at least one song.</p>
+                  ${rows}
+                </div>`;
+      }
+
+      async function playFriend(friendId, friendName) {
+        const cg = connectedGuild();
+        const guildId = cg ? cg.guildId : firstGuildId();
+        if (!guildId) return toast('Bot is not in any guild', true);
+        const isConnected = cg && cg.current;
+
+        const doPlay = async (channelId) => {
+          try {
+            const body = { friendId };
+            if (channelId) body.channelId = channelId;
+            const res = await fetch(`/api/guild/${guildId}/play-friend`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            if (res.status === 401) return handle401();
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error ?? 'Failed');
+            let msg = `Queued ${data.added} song${data.added === 1 ? '' : 's'} from ${friendName}`;
+            if (data.rejected > 0) msg += ` (${data.rejected} skipped — queue full)`;
+            toast(msg);
+            poll();
+          } catch (err) {
+            toast(err.message, true);
+          }
+        };
+
+        if (isConnected) {
+          doPlay(null);
+        } else {
+          promptChannelThen(guildId, `Play ${friendName}'s playlist`, doPlay);
+        }
+      }
+
+      // ---------- shared channel-pick prompt (inline panel at top of content) ----------
+      let pendingChannelPick = null; // { guildId, label, cb }
+
+      function promptChannelThen(guildId, label, cb) {
+        pendingChannelPick = { guildId, label, cb };
+        render();
+      }
+      function cancelChannelPick() {
+        pendingChannelPick = null;
+        render();
+      }
+      function confirmChannelPick() {
+        const sel = document.getElementById('pick-vc');
+        if (!sel || !sel.value) return toast('Pick a voice channel', true);
+        const { cb } = pendingChannelPick;
+        const channelId = sel.value;
+        pendingChannelPick = null;
+        render();
+        cb(channelId);
+      }
+
+      function channelPickHtml() {
+        if (!pendingChannelPick) return '';
+        const { guildId, label } = pendingChannelPick;
+        return `<div class="card">
+                  <h2>${escapeHtml(label)}</h2>
+                  <div class="upcoming-label">Bot is not connected — pick a voice channel</div>
+                  <div class="join-form">
+                    <select id="pick-vc">${vcOptions(guildId)}</select>
+                    <button class="primary" onclick="confirmChannelPick()">Join + Play</button>
+                    <button onclick="cancelChannelPick()">Cancel</button>
+                  </div>
+                </div>`;
+      }
+
+      // ---------- master render ----------
+      function renderTabBadges() {
+        // lightweight: only refresh the tab bar badges without nuking content
+        const tabsEl = mainEl.querySelector('.tabs');
+        if (tabsEl) tabsEl.outerHTML = tabsHtml();
+      }
+
+      function render() {
+        const snap = snapshotForms();
+        let body = '';
+        if (activeTab === 'queues') body = renderQueuesTab();
+        else if (activeTab === 'likes') body = renderLikesTab();
+        else if (activeTab === 'friends') body = renderFriendsTab();
+        mainEl.innerHTML = tabsHtml() + channelPickHtml() + body;
+        restoreForms(snap);
+      }
+
+      // ---------- polling ----------
       async function poll() {
         try {
           const [qRes, gRes] = await Promise.all([fetch('/api/queues'), fetch('/api/guilds')]);
           if (qRes.status === 401 || gRes.status === 401) {
-            me = null;
-            if (pollHandle) { clearInterval(pollHandle); pollHandle = null; }
-            renderHeader();
-            showLoginScreen();
+            handle401();
             return;
           }
-          const queues = await qRes.json();
-          const guilds = gRes.ok ? await gRes.json() : [];
-          renderQueues(queues, guilds);
+          lastQueues = await qRes.json();
+          lastGuilds = gRes.ok ? await gRes.json() : [];
+          render();
+          const statusEl = document.getElementById('status');
+          if (statusEl) statusEl.textContent = `live · updated ${new Date().toLocaleTimeString()}`;
         } catch (err) {
           const statusEl = document.getElementById('status');
           if (statusEl) statusEl.textContent = 'disconnected';

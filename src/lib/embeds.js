@@ -149,6 +149,36 @@ export function searchResultsSelect(results) {
   return new ActionRowBuilder().addComponents(select);
 }
 
+export function friendListEmbed(friends) {
+  const e = new EmbedBuilder().setColor(COLOR_INFO).setAuthor({ name: '👥 Friends' });
+  if (!friends.length) {
+    return e.setDescription(
+      'No one has liked any songs yet.\nPress the **Like** button on a Now Playing card to start your collection.',
+    );
+  }
+  const medals = ['🥇', '🥈', '🥉'];
+  const lines = friends.map((f, i) => {
+    const rank = medals[i] ?? `\`${String(i + 1).padStart(2, ' ')}.\``;
+    return `${rank} **${f.displayName}** — ${f.count} song${f.count === 1 ? '' : 's'}`;
+  });
+  return e.setDescription(`Pick a friend below to play their liked songs:\n\n${lines.join('\n')}`);
+}
+
+export function friendSelectRow(friends) {
+  if (!friends.length) return null;
+  const select = new StringSelectMenuBuilder()
+    .setCustomId('music:friend')
+    .setPlaceholder('Choose a friend…')
+    .addOptions(
+      friends.slice(0, 25).map((f) => ({
+        label: f.displayName.slice(0, 100),
+        description: `${f.count} liked song${f.count === 1 ? '' : 's'}`,
+        value: f.id,
+      })),
+    );
+  return new ActionRowBuilder().addComponents(select);
+}
+
 const ERROR_RULES = [
   {
     kind: 'cookie',
@@ -371,6 +401,7 @@ export function controlsRows({ paused = false, loopMode = 'off', shuffle = false
     shuffleButton(shuffle),
     loopButton(loopMode),
     new ButtonBuilder().setCustomId('music:queue').setLabel('Queue').setEmoji('📋').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('music:like').setLabel('Like').setStyle(ButtonStyle.Secondary),
   );
   return [row1, row2];
 }

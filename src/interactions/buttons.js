@@ -1,5 +1,6 @@
 import { MessageFlags } from 'discord.js';
 import { peekQueue } from '../lib/queue-manager.js';
+import { toggleLike } from '../lib/likes.js';
 import {
   nowPlayingEmbed,
   stoppedEmbed,
@@ -82,6 +83,30 @@ export async function handleMusicButton(interaction) {
     case 'stop': {
       q.stop();
       return interaction.update({ embeds: [stoppedEmbed()], components: [] });
+    }
+    case 'like': {
+      let liked, count;
+      try {
+        ({ liked, count } = await toggleLike(
+          interaction.user.id,
+          interaction.user.username,
+          q.current,
+        ));
+      } catch (err) {
+        console.error('[like] toggle failed:', err.message);
+        return ephemeralEmbed('error', 'Could not update likes.');
+      }
+      return interaction.reply({
+        embeds: [
+          notify(
+            liked ? 'success' : 'skip',
+            liked
+              ? `Liked: ${q.current.title}  ·  ${count} song${count === 1 ? '' : 's'} total`
+              : `Removed from likes: ${q.current.title}`,
+          ),
+        ],
+        flags: MessageFlags.Ephemeral,
+      });
     }
     default:
       return ephemeralEmbed('error', `Unknown action: ${action}`);

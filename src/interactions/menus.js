@@ -1,9 +1,11 @@
 import { MessageFlags } from 'discord.js';
-import { getQueue, peekQueue } from '../lib/queue-manager.js';
+import { getQueue, peekQueue, MAX_QUEUE } from '../lib/queue-manager.js';
 import { resolveTrack } from '../lib/track.js';
+import { getUserLikes } from '../lib/likes.js';
 import {
   nowPlayingEmbed,
   queuedEmbed,
+  playlistLoadedEmbed,
   nowPlayingComponents,
   notify,
   friendlyErrorEmbed,
@@ -15,6 +17,7 @@ export async function handleMusicSelect(interaction) {
   if (action === 'search') return handleSearchPick(interaction);
   if (action === 'remove') return handleRemove(interaction);
   if (action === 'jump') return handleJump(interaction);
+  if (action === 'friend') return handleFriendPick(interaction);
 }
 
 async function handleSearchPick(interaction) {
@@ -91,6 +94,74 @@ async function handleRemove(interaction) {
     components: [],
   });
   await q.refreshNowPlayingMessage();
+}
+
+async function handleFriendPick(interaction) {
+  const friendId = interaction.values[0];
+  const voiceChannel = interaction.member?.voice?.channel;
+  if (!voiceChannel) {
+    return interaction.update({
+      content: 'Join a voice channel first.',
+      embeds: [],
+      components: [],
+    });
+  }
+
+  const liked = await getUserLikes(friendId);
+  if (!liked) {
+    return interaction.update({
+      embeds: [notify('error', 'That friend has no liked songs anymore.')],
+      components: [],
+    });
+  }
+
+  await interaction.deferUpdate();
+
+  const queue = getQueue(interaction.guildId);
+  queue.textChannel = interaction.channel;
+
+  try {
+    await queue.ensureConnection(voiceChannel);
+  } catch (err) {
+    return interaction.editReply({
+      embeds: [notify('error', `Failed to join voice: ${err.message}`)],
+      components: [],
+    });
+  }
+
+  const startedEmpty = !queue.current;
+  let added = 0;
+  let rejected = 0;
+  for (const t of liked.tracks) {
+    if (queue.enqueue({ ...t, requestedBy: `❤️ ${liked.username}` })) added++;
+    else rejected++;
+  }
+  if (added === 0) {
+    return interaction.editReply({
+      embeds: [notify('error', `Queue is full (max ${MAX_QUEUE}). Nothing added.`)],
+      components: [],
+    });
+  }
+
+  if (startedEmpty) {
+    await queue.start();
+    await queue.retireNowPlayingMessage();
+    await interaction.editReply({
+      embeds: [playlistLoadedEmbed(added, { started: true, rejected, maxQueue: MAX_QUEUE })],
+      components: [],
+    });
+    const npMsg = await interaction.channel.send({
+      embeds: [nowPlayingEmbed(queue.current, { queue, progressSeconds: 0 })],
+      components: nowPlayingComponents(queue),
+    });
+    queue.nowPlayingMessage = npMsg;
+    return;
+  }
+  await queue.refreshNowPlayingMessage();
+  return interaction.editReply({
+    embeds: [playlistLoadedEmbed(added, { started: false, rejected, maxQueue: MAX_QUEUE })],
+    components: [],
+  });
 }
 
 async function handleJump(interaction) {

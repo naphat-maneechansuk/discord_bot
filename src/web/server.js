@@ -2,27 +2,39 @@ import express from 'express';
 import { ChannelType } from 'discord.js';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { listQueues, peekQueue, getQueue } from '../lib/queue-manager.js';
+import { listQueues, peekQueue, getQueue, MAX_QUEUE } from '../lib/queue-manager.js';
 import { resolveTrack } from '../lib/track.js';
 import { registerAuthRoutes, requireAuth } from './auth.js';
+import { toggleLike, getUserLikes, listLikers } from '../lib/likes.js';
+import { nowPlayingEmbed, nowPlayingComponents } from '../lib/embeds.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.WEB_PORT ?? 3000;
 const HOST = process.env.WEB_HOST ?? '127.0.0.1';
 
-function serializeQueue(q, client) {
+function serializeQueue(q, client, likedSources = null) {
   const guild = client.guilds.cache.get(q.guildId);
+  const likedByMe = (src) => (likedSources ? likedSources.has(src) : false);
   return {
     guildId: q.guildId,
     guildName: guild?.name ?? q.guildId,
     current: q.current
-      ? { title: q.current.title, duration: q.current.duration, requestedBy: q.current.requestedBy, source: q.current.source }
+      ? {
+          title: q.current.title,
+          duration: q.current.duration,
+          requestedBy: q.current.requestedBy,
+          source: q.current.source,
+          thumbnail: q.current.thumbnail ?? null,
+          artist: q.current.artist ?? '',
+          likedByMe: likedByMe(q.current.source),
+        }
       : null,
     upcoming: q.tracks.map((t) => ({
       title: t.title,
       duration: t.duration,
       requestedBy: t.requestedBy,
       source: t.source,
+      likedByMe: likedByMe(t.source),
     })),
     isPlaying: q.isPlaying(),
     status: q.status(),
@@ -41,8 +53,10 @@ export function startWebServer(client) {
     redirectUri: process.env.OAUTH_REDIRECT_URI ?? `http://localhost:${PORT}/auth/callback`,
   });
 
-  app.get('/api/queues', requireAuth, (_req, res) => {
-    res.json(listQueues().map((q) => serializeQueue(q, client)));
+  app.get('/api/queues', requireAuth, async (req, res) => {
+    const liked = await getUserLikes(req.session.userId);
+    const likedSources = new Set((liked?.tracks ?? []).map((t) => t.source));
+    res.json(listQueues().map((q) => serializeQueue(q, client, likedSources)));
   });
 
   app.get('/api/guilds', requireAuth, (_req, res) => {
@@ -163,6 +177,97 @@ export function startWebServer(client) {
       res.status(500).json({ error: err.message });
     }
   }));
+
+  // ---- Likes & Friends ----
+
+  app.get('/api/likes', requireAuth, async (req, res) => {
+    const liked = await getUserLikes(req.session.userId);
+    res.json({ tracks: liked?.tracks ?? [] });
+  });
+
+  app.post('/api/likes/toggle', requireAuth, async (req, res) => {
+    const { source, title } = req.body ?? {};
+    if (!source || !title) {
+      return res.status(400).json({ error: 'source and title required' });
+    }
+    const { artist, duration, thumbnail } = req.body;
+    try {
+      const { liked, count } = await toggleLike(
+        req.session.userId,
+        req.session.username,
+        { source, title, artist, duration, thumbnail },
+      );
+      res.json({ liked, count });
+    } catch (err) {
+      console.error('[web] likes/toggle error:', err.message);
+      res.status(500).json({ error: 'Failed to update likes' });
+    }
+  });
+
+  app.get('/api/friends', requireAuth, async (_req, res) => {
+    res.json(await listLikers());
+  });
+
+  app.post('/api/guild/:guildId/play-friend', requireAuth, async (req, res) => {
+    const { friendId, channelId } = req.body ?? {};
+    if (!friendId) return res.status(400).json({ error: 'friendId required' });
+
+    const guild = client.guilds.cache.get(req.params.guildId);
+    if (!guild) return res.status(404).json({ error: 'Guild not found' });
+
+    const liked = await getUserLikes(friendId);
+    if (!liked) return res.status(404).json({ error: 'That friend has no liked songs' });
+
+    const queue = getQueue(req.params.guildId);
+
+    // Need a voice connection: reuse the live one, or join the requested channel.
+    if (!queue.connection) {
+      if (!channelId) {
+        return res.status(400).json({ error: 'Not connected — channelId required to join' });
+      }
+      const channel = guild.channels.cache.get(channelId);
+      if (
+        !channel ||
+        (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice)
+      ) {
+        return res.status(400).json({ error: 'Voice channel not found' });
+      }
+      try {
+        await queue.ensureConnection(channel);
+      } catch (err) {
+        return res.status(500).json({ error: `Failed to join voice: ${err.message}` });
+      }
+    }
+
+    const startedEmpty = !queue.current;
+    let added = 0;
+    let rejected = 0;
+    for (const t of liked.tracks) {
+      if (queue.enqueue({ ...t, requestedBy: `❤️ ${liked.username}` })) added++;
+      else rejected++;
+    }
+    if (added === 0) {
+      return res.status(400).json({ error: `Queue is full (max ${MAX_QUEUE})` });
+    }
+
+    try {
+      if (startedEmpty) {
+        await queue.start();
+        await queue.retireNowPlayingMessage();
+        if (queue.textChannel) {
+          queue.nowPlayingMessage = await queue.textChannel.send({
+            embeds: [nowPlayingEmbed(queue.current, { queue, progressSeconds: 0 })],
+            components: nowPlayingComponents(queue),
+          });
+        }
+      } else {
+        await queue.refreshNowPlayingMessage();
+      }
+    } catch (err) {
+      console.error('[web] play-friend error:', err.message);
+    }
+    res.json({ ok: true, added, rejected, started: startedEmpty });
+  });
 
   app.listen(PORT, HOST, () => {
     console.log(`Web dashboard: listening on ${HOST}:${PORT}`);
