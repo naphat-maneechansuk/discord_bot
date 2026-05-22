@@ -8,6 +8,7 @@ import { registerAuthRoutes, requireAuth } from './auth.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.WEB_PORT ?? 3000;
+const HOST = process.env.WEB_HOST ?? '127.0.0.1';
 
 function serializeQueue(q, client) {
   const guild = client.guilds.cache.get(q.guildId);
@@ -163,7 +164,7 @@ export function startWebServer(client) {
     }
   }));
 
-  app.listen(PORT, '127.0.0.1', () => {
-    console.log(`Web dashboard: http://localhost:${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`Web dashboard: listening on ${HOST}:${PORT}`);
   });
 }
