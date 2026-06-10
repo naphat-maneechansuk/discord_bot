@@ -178,6 +178,12 @@
         background: var(--accent); color: #fff; border-radius: 4px; padding: 1px 6px; margin-left: 6px;
       }
 
+      .vc-members {
+        margin-top: 12px; font-size: 12px; color: var(--muted);
+        display: flex; flex-direction: column; gap: 4px;
+      }
+      .vc-members strong { color: var(--text); font-weight: 500; }
+
       .play-target {
         display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
         margin-bottom: 14px; font-size: 13px; color: var(--muted);
@@ -459,24 +465,36 @@
         const g = lastGuilds.find((x) => x.id === guildId);
         const chans = g ? g.voiceChannels : [];
         return chans.length
-          ? chans.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')
+          ? chans.map((c) => {
+              const n = (c.members ?? []).length;
+              const label = n ? `${c.name} (${n} listening)` : c.name;
+              return `<option value="${c.id}">${escapeHtml(label)}</option>`;
+            }).join('')
           : '<option value="">(no voice channels)</option>';
+      }
+
+      // who's in each voice channel (only channels with people)
+      function vcMembersHtml(guildId) {
+        const g = lastGuilds.find((x) => x.id === guildId);
+        const occupied = (g ? g.voiceChannels : []).filter((c) => (c.members ?? []).length);
+        if (!occupied.length) return '';
+        return `<div class="vc-members">${occupied.map((c) =>
+          `<div>🔊 <strong>${escapeHtml(c.name)}</strong> · ${c.members.length} — ${c.members.map(escapeHtml).join(', ')}</div>`
+        ).join('')}</div>`;
       }
 
       // ---------- QUEUES tab ----------
       function renderIdleGuild(g) {
-        const opts = g.voiceChannels.length
-          ? g.voiceChannels.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')
-          : '<option value="">(no voice channels)</option>';
         return `<div class="card idle">
                   <h2>${escapeHtml(g.name)}</h2>
                   <div class="upcoming-label">Not connected — pick a channel and play</div>
                   <div class="join-form">
-                    <select id="vc-${g.id}">${opts}</select>
+                    <select id="vc-${g.id}">${vcOptions(g.id)}</select>
                     <input type="text" id="join-${g.id}" placeholder="YouTube URL or search keywords"
                            onkeydown="if(event.key==='Enter') onJoinPlay('${g.id}')" />
                     <button class="primary" onclick="onJoinPlay('${g.id}')">Join + Play</button>
                   </div>
+                  ${vcMembersHtml(g.id)}
                 </div>`;
       }
 
@@ -722,6 +740,7 @@
                     <button class="primary" onclick="confirmChannelPick()">Join + Play</button>
                     <button onclick="cancelChannelPick()">Cancel</button>
                   </div>
+                  ${vcMembersHtml(guildId)}
                 </div>`;
       }
 
@@ -732,6 +751,8 @@
         if (tabsEl) tabsEl.outerHTML = tabsHtml();
       }
 
+      let lastRenderedSig = '';
+
       function render() {
         const snap = snapshotForms();
         let body = '';
@@ -740,6 +761,15 @@
         else if (activeTab === 'friends') body = renderFriendsTab();
         mainEl.innerHTML = tabsHtml() + channelPickHtml() + body;
         restoreForms(snap);
+        lastRenderedSig = JSON.stringify([lastQueues, lastGuilds]);
+      }
+
+      // True while the user is interacting with a form control inside main
+      // (open <select> dropdown, typing in an input). Re-rendering then would
+      // close the dropdown / steal focus, so poll() skips and catches up later.
+      function formInteractionActive() {
+        const el = document.activeElement;
+        return !!el && mainEl.contains(el) && (el.tagName === 'SELECT' || el.tagName === 'INPUT');
       }
 
       // ---------- polling ----------
@@ -752,7 +782,8 @@
           }
           lastQueues = await qRes.json();
           lastGuilds = gRes.ok ? await gRes.json() : [];
-          render();
+          const sig = JSON.stringify([lastQueues, lastGuilds]);
+          if (sig !== lastRenderedSig && !formInteractionActive()) render();
           const statusEl = document.getElementById('status');
           if (statusEl) statusEl.textContent = `live · updated ${new Date().toLocaleTimeString()}`;
         } catch (err) {

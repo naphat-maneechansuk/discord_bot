@@ -68,7 +68,11 @@ export function startWebServer(client) {
           (c) =>
             c.type === ChannelType.GuildVoice || c.type === ChannelType.GuildStageVoice,
         )
-        .map((c) => ({ id: c.id, name: c.name }))
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          members: c.members.map((m) => m.displayName ?? m.user?.username ?? 'unknown'),
+        }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     }));
     res.json(guilds);
