@@ -39,6 +39,7 @@ function serializeQueue(q, client, likedSources = null) {
     isPlaying: q.isPlaying(),
     status: q.status(),
     loopMode: q.loopMode,
+    lastError: q.lastError ?? null,
   };
 }
 

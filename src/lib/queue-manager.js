@@ -12,6 +12,11 @@ import { YT_DLP, COOKIES_ARGS } from './track.js';
 import { nowPlayingEmbed, nowPlayingComponents } from './embeds.js';
 
 export const MAX_QUEUE = 500;
+// how long to stay in the voice channel after a stream failure empties the
+// queue, so the user can retry from the dashboard without re-joining
+const FAIL_LINGER_MS = 120_000;
+// playback shorter than this counts as a failed stream (yt-dlp 403 etc.)
+const FAIL_THRESHOLD_MS = 3_000;
 
 const queues = new Map();
 
@@ -34,6 +39,9 @@ class GuildQueue {
     this.shuffle = false;
     this.currentResource = null;
     this.jumpPage = 0;
+    this.lastError = null;
+    this._stopRequested = false;
+    this._lingerTimer = null;
   }
 
   setJumpPage(page) {
@@ -57,6 +65,7 @@ class GuildQueue {
     if (restart) {
       this.tracks.unshift(this.current);
       this.current = null;
+      this._stopRequested = true;
       this.player.stop();
       return true;
     }
@@ -65,6 +74,7 @@ class GuildQueue {
     if (this.current) this.tracks.unshift(this.current);
     this.tracks.unshift(prevTrack);
     this.current = null;
+    this._stopRequested = true;
     this.player.stop();
     return true;
   }
@@ -123,11 +133,13 @@ class GuildQueue {
     const [track] = this.tracks.splice(index, 1);
     this.tracks.unshift(track);
     this._idleOverride = { loop: 'off', shuffle: false };
+    this._stopRequested = true;
     this.player.stop();
     return true;
   }
 
   skip() {
+    this._stopRequested = true;
     this.player.stop();
   }
 
@@ -142,6 +154,7 @@ class GuildQueue {
   stop() {
     this.tracks = [];
     this.current = null;
+    this._stopRequested = true;
     this.player.stop();
     this.#cleanup();
   }
@@ -159,10 +172,32 @@ class GuildQueue {
   }
 
   async #onIdle() {
+    const stopRequested = this._stopRequested;
+    this._stopRequested = false;
+    const playedMs = this.currentResource ? (this.currentResource.playbackDuration || 0) : 0;
+
+    // Stream died almost immediately (e.g. yt-dlp got HTTP 403 from
+    // YouTube) — retry the same track once before giving up on it.
+    const failed = !stopRequested && !!this.current && playedMs < FAIL_THRESHOLD_MS;
+    if (failed && !this.current._retried) {
+      const track = this.current;
+      track._retried = true;
+      console.warn(`[queue ${this.guildId}] stream ended after ${playedMs}ms — retrying: ${track.title}`);
+      await this.#playTrack(track, { notify: false });
+      return;
+    }
+    if (failed) {
+      this.lastError = `Couldn't stream "${this.current.title}" — YouTube refused twice. Try playing it again.`;
+      console.error(`[queue ${this.guildId}] giving up on: ${this.current.title}`);
+    } else if (this.current) {
+      delete this.current._retried; // played fine; allow future retries under loop
+    }
+
     const override = this._idleOverride;
     this._idleOverride = null;
-    const loop = override?.loop ?? this.loopMode;
+    let loop = override?.loop ?? this.loopMode;
     const shuffle = override?.shuffle ?? this.shuffle;
+    if (failed) loop = 'off'; // never re-queue a track that just failed twice
 
     let nextTrack;
     let notify = true;
@@ -186,7 +221,14 @@ class GuildQueue {
     if (!nextTrack) {
       this.current = null;
       await this.retireNowPlayingMessage();
-      this.#cleanup();
+      if (failed) {
+        // stay in the channel for a bit so the user can retry from the
+        // dashboard without sending the bot back in
+        if (this._lingerTimer) clearTimeout(this._lingerTimer);
+        this._lingerTimer = setTimeout(() => this.#cleanup(), FAIL_LINGER_MS);
+      } else {
+        this.#cleanup();
+      }
       return;
     }
     await this.#playTrack(nextTrack, { notify });
@@ -200,6 +242,11 @@ class GuildQueue {
 
   async #playTrack(next, { notify = true } = {}) {
     this.current = next;
+    this.lastError = null;
+    if (this._lingerTimer) {
+      clearTimeout(this._lingerTimer);
+      this._lingerTimer = null;
+    }
 
     if (this.currentProcess) {
       try { this.currentProcess.kill(); } catch {}
@@ -299,6 +346,10 @@ class GuildQueue {
     if (this._bumpTimer) {
       clearTimeout(this._bumpTimer);
       this._bumpTimer = null;
+    }
+    if (this._lingerTimer) {
+      clearTimeout(this._lingerTimer);
+      this._lingerTimer = null;
     }
     if (this.connection && this.connection.state.status !== VoiceConnectionStatus.Destroyed) {
       this.connection.destroy();
