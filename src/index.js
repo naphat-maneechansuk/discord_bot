@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { startWebServer } from './web/server.js';
 import { handleMusicButton } from './interactions/buttons.js';
 import { handleMusicSelect } from './interactions/menus.js';
-import { peekQueue } from './lib/queue-manager.js';
+import { peekQueue, setBotClient } from './lib/queue-manager.js';
 import { flushLikes } from './lib/likes.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -29,6 +29,7 @@ for (const file of await readdir(commandsDir)) {
 
 client.once(Events.ClientReady, (c) => {
   console.log(`Bot ready as ${c.user.tag}`);
+  setBotClient(c);
   startWebServer(c);
 });
 

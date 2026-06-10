@@ -20,6 +20,13 @@ const FAIL_THRESHOLD_MS = 3_000;
 
 const queues = new Map();
 
+// discord.js client, injected at startup — needed to resolve the voice
+// channel object for setStatus() (the voice connection alone can't)
+let botClient = null;
+export function setBotClient(client) {
+  botClient = client;
+}
+
 class GuildQueue {
   constructor(guildId) {
     this.guildId = guildId;
@@ -77,6 +84,20 @@ class GuildQueue {
     this._stopRequested = true;
     this.player.stop();
     return true;
+  }
+
+  // "voice channel status" — the short text under the channel name in the
+  // channel list. Per-channel per-guild, so it works with the bot playing
+  // different songs in multiple servers at once. The endpoint is not in
+  // discord.js/discord-api-types yet, so hit the REST route directly.
+  #setVoiceStatus(text) {
+    const channelId = this.connection?.joinConfig?.channelId;
+    if (!botClient || !channelId) return;
+    botClient.rest
+      .put(`/channels/${channelId}/voice-status`, {
+        body: { status: (text ?? '').slice(0, 500) },
+      })
+      .catch((err) => console.warn(`[voice-status ${this.guildId}]`, err.message));
   }
 
   async retireNowPlayingMessage() {
@@ -224,6 +245,7 @@ class GuildQueue {
       if (failed) {
         // stay in the channel for a bit so the user can retry from the
         // dashboard without sending the bot back in
+        this.#setVoiceStatus('');
         if (this._lingerTimer) clearTimeout(this._lingerTimer);
         this._lingerTimer = setTimeout(() => this.#cleanup(), FAIL_LINGER_MS);
       } else {
@@ -281,6 +303,7 @@ class GuildQueue {
     });
     this.currentResource = resource;
     this.player.play(resource);
+    this.#setVoiceStatus(`🎵 ${next.title}`);
 
     if (notify && this.textChannel) {
       await this.retireNowPlayingMessage();
@@ -339,6 +362,7 @@ class GuildQueue {
   }
 
   #cleanup() {
+    this.#setVoiceStatus(''); // must run before the connection is destroyed
     if (this.currentProcess) {
       try { this.currentProcess.kill(); } catch {}
       this.currentProcess = null;
