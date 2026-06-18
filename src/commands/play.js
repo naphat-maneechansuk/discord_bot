@@ -1,6 +1,13 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { getQueue, MAX_QUEUE } from '../lib/queue-manager.js';
-import { resolveTrack, resolvePlaylist, isPlaylistUrl, searchTracks } from '../lib/track.js';
+import {
+  resolveTrack,
+  resolvePlaylist,
+  isPlaylistUrl,
+  searchTracks,
+  searchSuggestions,
+  formatDuration,
+} from '../lib/track.js';
 import {
   nowPlayingEmbed,
   queuedEmbed,
@@ -15,8 +22,67 @@ export const data = new SlashCommandBuilder()
   .setName('play')
   .setDescription('Play a song or add to queue')
   .addStringOption((opt) =>
-    opt.setName('query').setDescription('YouTube URL or search keywords').setRequired(true),
+    opt
+      .setName('query')
+      .setDescription('YouTube URL or search keywords')
+      .setRequired(true)
+      .setAutocomplete(true),
   );
+
+// --- Autocomplete: live YouTube search shown while typing ---
+const MIN_CHARS = 3;
+const DEBOUNCE_MS = 300;
+const CACHE_TTL = 5 * 60 * 1000;
+const suggestCache = new Map(); // query -> { at, choices }
+const latestQuery = new Map(); // userId -> last focused value (for debounce)
+
+function choiceLabel({ title, channel, duration }) {
+  const dur = duration ? ` (${formatDuration(duration)})` : '';
+  const tail = channel ? ` — ${channel}` : '';
+  let label = `${title}${tail}${dur}`;
+  if (label.length > 100) label = label.slice(0, 99) + '…';
+  return label;
+}
+
+async function safeRespond(interaction, choices) {
+  if (interaction.responded) return;
+  // Past the 3s deadline Discord rejects with "Unknown interaction" — ignore it.
+  await interaction.respond(choices).catch(() => {});
+}
+
+export async function autocomplete(interaction) {
+  const focused = interaction.options.getFocused().trim();
+  const userId = interaction.user.id;
+
+  // Nothing useful to search: too short, or already a URL they can just submit.
+  if (focused.length < MIN_CHARS || /^https?:\/\//i.test(focused)) {
+    return safeRespond(interaction, []);
+  }
+
+  const cached = suggestCache.get(focused);
+  if (cached && Date.now() - cached.at < CACHE_TTL) {
+    return safeRespond(interaction, cached.choices);
+  }
+
+  // Debounce: every keystroke is its own interaction, so we let only the
+  // value that stays put for DEBOUNCE_MS actually spawn yt-dlp. Intermediate
+  // keystrokes respond empty cheaply instead of piling up searches.
+  latestQuery.set(userId, focused);
+  await new Promise((r) => setTimeout(r, DEBOUNCE_MS));
+  if (latestQuery.get(userId) !== focused) {
+    return safeRespond(interaction, []);
+  }
+
+  let choices = [];
+  try {
+    const tracks = await searchSuggestions(focused, 10);
+    choices = tracks.map((t) => ({ name: choiceLabel(t), value: t.source.slice(0, 100) }));
+    suggestCache.set(focused, { at: Date.now(), choices });
+  } catch {
+    choices = [];
+  }
+  return safeRespond(interaction, choices);
+}
 
 export async function execute(interaction) {
   const query = interaction.options.getString('query', true);

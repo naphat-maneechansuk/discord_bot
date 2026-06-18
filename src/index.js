@@ -41,6 +41,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await command.execute(interaction);
       return;
     }
+    if (interaction.isAutocomplete()) {
+      const command = client.commands.get(interaction.commandName);
+      if (command?.autocomplete) await command.autocomplete(interaction);
+      return;
+    }
     if (interaction.isButton() && interaction.customId.startsWith('music:')) {
       await handleMusicButton(interaction);
       return;
@@ -51,6 +56,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   } catch (err) {
     console.error(err);
+    if (interaction.isAutocomplete()) return; // no reply channel for autocomplete
     const reply = { content: 'Action failed.', flags: MessageFlags.Ephemeral };
     if (interaction.replied || interaction.deferred) await interaction.followUp(reply).catch(() => {});
     else await interaction.reply(reply).catch(() => {});

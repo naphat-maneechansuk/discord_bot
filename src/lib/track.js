@@ -156,6 +156,62 @@ export function searchTracks(query, limit = 5) {
   });
 }
 
+// Fast search for slash-command autocomplete: --flat-playlist skips per-video
+// extraction so it returns in well under the 3s autocomplete deadline.
+const SUGGEST_FIELDS = ['id', 'webpage_url', 'url', 'title', 'duration', 'channel', 'uploader'];
+const SUGGEST_TEMPLATE = SUGGEST_FIELDS.map((f) => `%(${f})s`).join('\t');
+
+export function searchSuggestions(query, limit = 10) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(
+      YT_DLP,
+      [
+        `ytsearch${limit}:${query}`,
+        '--flat-playlist',
+        '--print',
+        SUGGEST_TEMPLATE,
+        '--no-warnings',
+        '--quiet',
+        ...COOKIES_ARGS,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    let out = '';
+    let err = '';
+    proc.stdout.on('data', (c) => (out += c));
+    proc.stderr.on('data', (c) => (err += c));
+    proc.on('close', (code) => {
+      if (code !== 0) return reject(new Error(`yt-dlp exited ${code}: ${err.trim()}`));
+      try {
+        const results = out
+          .trim()
+          .split('\n')
+          .filter(Boolean)
+          .map((line) => {
+            const cols = line.split('\t');
+            const get = (k) => unNA(cols[SUGGEST_FIELDS.indexOf(k)]);
+            const id = get('id');
+            let source = get('webpage_url') || get('url') || '';
+            if (!/^https?:\/\//i.test(source)) {
+              source = id ? `https://www.youtube.com/watch?v=${id}` : source;
+            }
+            return {
+              title: get('title') ?? '(no title)',
+              source,
+              duration: Number(get('duration')) || 0,
+              channel: get('channel') ?? get('uploader') ?? '',
+            };
+          })
+          .filter((t) => /^https?:\/\//i.test(t.source));
+        resolve(results);
+      } catch (e) {
+        reject(e);
+      }
+    });
+    proc.on('error', reject);
+  });
+}
+
 export function formatDuration(seconds) {
   if (!seconds) return '?:??';
   const m = Math.floor(seconds / 60);
