@@ -24,13 +24,13 @@ export const data = new SlashCommandBuilder()
   .addStringOption((opt) =>
     opt
       .setName('query')
-      .setDescription('YouTube URL or search keywords')
+      .setDescription('YouTube URL, or type 3+ letters to see song suggestions')
       .setRequired(true)
       .setAutocomplete(true),
   );
 
 // --- Autocomplete: live YouTube search shown while typing ---
-const MIN_CHARS = 1;
+const MIN_CHARS = 3;
 const DEBOUNCE_MS = 300;
 const CACHE_TTL = 5 * 60 * 1000;
 const suggestCache = new Map(); // query -> { at, choices }
