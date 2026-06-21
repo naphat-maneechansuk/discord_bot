@@ -178,6 +178,18 @@
         background: var(--accent); color: #fff; border-radius: 4px; padding: 1px 6px; margin-left: 6px;
       }
 
+      /* servers tab */
+      .srv-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+      .srv-head h2 { margin: 0; }
+      .pill {
+        font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+        border-radius: 999px; padding: 2px 9px; font-weight: 600;
+      }
+      .pill.on { background: rgba(67, 181, 129, 0.15); color: var(--green); }
+      .pill.off { background: rgba(237, 66, 69, 0.15); color: var(--red); }
+      .srv-meta { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+      .srv-meta .playing { color: var(--green); }
+
       .queue-error {
         background: rgba(237, 66, 69, 0.1); border-left: 3px solid var(--red);
         color: var(--red); padding: 10px 14px; border-radius: 6px;
@@ -428,8 +440,10 @@
           `<button class="tab ${activeTab === id ? 'active' : ''}" onclick="switchTab('${id}')">
              ${label}${count !== null && count !== undefined ? `<span class="badge">${count}</span>` : ''}
            </button>`;
+        const serverCount = lastGuilds.length || null;
         return `<div class="tabs">
           ${t('queues', 'Live Queue')}
+          ${t('servers', 'Servers', serverCount)}
           ${t('likes', 'My Likes', likesCount)}
           ${t('friends', 'Friends', friendsCount)}
         </div>`;
@@ -564,6 +578,56 @@
         }).join('');
         const idleHtml = idleGuilds.map(renderIdleGuild).join('');
         return activeHtml + idleHtml;
+      }
+
+      // ---------- SERVERS tab ----------
+      async function toggleGuildEnabled(btn, guildId, enable) {
+        if (btn) btn.disabled = true;
+        try {
+          const res = await fetch(`/api/guild/${guildId}/set-enabled`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ enabled: enable }),
+          });
+          if (res.status === 401) return handle401();
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error ?? 'Failed');
+          toast(enable ? 'Bot enabled in this server' : 'Bot disabled in this server');
+          await poll();
+        } catch (err) {
+          toast(err.message ?? 'Failed', true);
+          if (btn) btn.disabled = false;
+        }
+      }
+
+      function renderServersTab() {
+        const guilds = lastGuilds;
+        if (!guilds.length) {
+          return `<div class="empty">Bot is not in any servers.
+            <div class="hint">Invite the bot to a server to get started.</div></div>`;
+        }
+        const byId = new Map(lastQueues.map((q) => [q.guildId, q]));
+        return guilds.map((g) => {
+          const enabled = !g.disabled;
+          const q = byId.get(g.id);
+          const playing = q && q.current
+            ? `<span class="playing">🎵 Now playing: ${escapeHtml(q.current.title)}</span>`
+            : 'Idle';
+          const members = typeof g.memberCount === 'number'
+            ? ` · ${g.memberCount} member${g.memberCount === 1 ? '' : 's'}` : '';
+          const btn = enabled
+            ? `<button class="danger" onclick="toggleGuildEnabled(this, '${g.id}', false)">Disable bot</button>`
+            : `<button class="primary" onclick="toggleGuildEnabled(this, '${g.id}', true)">Enable bot</button>`;
+          return `<div class="card">
+                    <div class="srv-head">
+                      <h2>${escapeHtml(g.name)}</h2>
+                      <span class="pill ${enabled ? 'on' : 'off'}">${enabled ? 'Enabled' : 'Disabled'}</span>
+                    </div>
+                    <div class="srv-meta">${playing}${members}</div>
+                    <div class="controls">${btn}</div>
+                    ${!enabled ? `<div class="upcoming-label">New commands are blocked here. Any song already playing finishes on its own.</div>` : ''}
+                  </div>`;
+        }).join('');
       }
 
       // ---------- LIKES tab ----------
@@ -765,6 +829,7 @@
         const snap = snapshotForms();
         let body = '';
         if (activeTab === 'queues') body = renderQueuesTab();
+        else if (activeTab === 'servers') body = renderServersTab();
         else if (activeTab === 'likes') body = renderLikesTab();
         else if (activeTab === 'friends') body = renderFriendsTab();
         mainEl.innerHTML = tabsHtml() + channelPickHtml() + body;

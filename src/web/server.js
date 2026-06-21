@@ -6,6 +6,7 @@ import { listQueues, peekQueue, getQueue, MAX_QUEUE } from '../lib/queue-manager
 import { resolveTrack } from '../lib/track.js';
 import { registerAuthRoutes, requireAuth } from './auth.js';
 import { toggleLike, getUserLikes, listLikers } from '../lib/likes.js';
+import { isGuildDisabled, setGuildDisabled } from '../lib/guild-state.js';
 import { nowPlayingEmbed, nowPlayingComponents } from '../lib/embeds.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -64,6 +65,8 @@ export function startWebServer(client) {
     const guilds = client.guilds.cache.map((g) => ({
       id: g.id,
       name: g.name,
+      disabled: isGuildDisabled(g.id),
+      memberCount: g.memberCount,
       voiceChannels: g.channels.cache
         .filter(
           (c) =>
@@ -77,6 +80,19 @@ export function startWebServer(client) {
         .sort((a, b) => a.name.localeCompare(b.name)),
     }));
     res.json(guilds);
+  });
+
+  // Enable / disable the bot in a guild (soft). When disabled the bot ignores
+  // new slash commands there; any in-progress queue keeps playing until it ends.
+  app.post('/api/guild/:guildId/set-enabled', requireAuth, (req, res) => {
+    const { enabled } = req.body ?? {};
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled (boolean) required' });
+    }
+    const guild = client.guilds.cache.get(req.params.guildId);
+    if (!guild) return res.status(404).json({ error: 'Guild not found' });
+    setGuildDisabled(req.params.guildId, !enabled);
+    res.json({ ok: true, enabled });
   });
 
   app.post('/api/guild/:guildId/play', requireAuth, async (req, res) => {

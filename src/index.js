@@ -8,6 +8,7 @@ import { handleMusicButton } from './interactions/buttons.js';
 import { handleMusicSelect } from './interactions/menus.js';
 import { peekQueue, setBotClient } from './lib/queue-manager.js';
 import { flushLikes } from './lib/likes.js';
+import { isGuildDisabled, flushGuildState } from './lib/guild-state.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -35,13 +36,28 @@ client.once(Events.ClientReady, (c) => {
 
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
+    // Bot disabled in this guild (from the dashboard): block NEW commands, but
+    // leave button/menu controls working so any in-progress queue can finish.
+    const guildDisabled = interaction.inGuild() && isGuildDisabled(interaction.guildId);
+
     if (interaction.isChatInputCommand()) {
+      if (guildDisabled) {
+        await interaction.reply({
+          content: '⛔ บอทถูกปิดใช้งานใน server นี้',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
       const command = client.commands.get(interaction.commandName);
       if (!command) return;
       await command.execute(interaction);
       return;
     }
     if (interaction.isAutocomplete()) {
+      if (guildDisabled) {
+        await interaction.respond([]).catch(() => {});
+        return;
+      }
       const command = client.commands.get(interaction.commandName);
       if (command?.autocomplete) await command.autocomplete(interaction);
       return;
@@ -76,6 +92,7 @@ client.on(Events.MessageCreate, (message) => {
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     flushLikes();
+    flushGuildState();
     client.destroy();
     process.exit(0);
   });
