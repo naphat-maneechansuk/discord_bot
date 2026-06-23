@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { withYtdlpSlot } from './ytdlp-gate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BUNDLED_YT_DLP = join(__dirname, '..', '..', 'node_modules', 'youtube-dl-exec', 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
@@ -32,7 +33,7 @@ export async function resolveTrack(query, requestedBy) {
 }
 
 function printOne(source) {
-  return new Promise((resolve, reject) => {
+  return withYtdlpSlot(() => new Promise((resolve, reject) => {
     const proc = spawn(
       YT_DLP,
       [source, '--print', TRACK_TEMPLATE, '--no-playlist', '--no-warnings', '--quiet', ...COOKIES_ARGS],
@@ -49,7 +50,7 @@ function printOne(source) {
       resolve(first);
     });
     proc.on('error', reject);
-  });
+  }));
 }
 
 export function isPlaylistUrl(url) {
@@ -67,7 +68,7 @@ const PLAYLIST_FIELDS = ['webpage_url', 'url', 'id', 'title', 'uploader', 'chann
 const PLAYLIST_TEMPLATE = PLAYLIST_FIELDS.map((f) => `%(${f})s`).join('\t');
 
 export function resolvePlaylist(url, requestedBy, limit = 100) {
-  return new Promise((resolve, reject) => {
+  return withYtdlpSlot(() => new Promise((resolve, reject) => {
     const proc = spawn(
       YT_DLP,
       [
@@ -112,14 +113,14 @@ export function resolvePlaylist(url, requestedBy, limit = 100) {
       }
     });
     proc.on('error', reject);
-  });
+  }));
 }
 
 const SEARCH_FIELDS = ['webpage_url', 'id', 'title', 'duration', 'thumbnail', 'channel', 'uploader'];
 const SEARCH_TEMPLATE = SEARCH_FIELDS.map((f) => `%(${f})s`).join('\t');
 
 export function searchTracks(query, limit = 5) {
-  return new Promise((resolve, reject) => {
+  return withYtdlpSlot(() => new Promise((resolve, reject) => {
     const proc = spawn(
       YT_DLP,
       [`ytsearch${limit}:${query}`, '--print', SEARCH_TEMPLATE, '--no-playlist', '--no-warnings', '--quiet', ...COOKIES_ARGS],
@@ -153,7 +154,7 @@ export function searchTracks(query, limit = 5) {
       }
     });
     proc.on('error', reject);
-  });
+  }));
 }
 
 // Fast search for slash-command autocomplete: --flat-playlist skips per-video
