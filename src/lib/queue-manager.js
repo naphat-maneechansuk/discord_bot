@@ -92,12 +92,22 @@ class GuildQueue {
   // discord.js/discord-api-types yet, so hit the REST route directly.
   #setVoiceStatus(text) {
     const channelId = this.connection?.joinConfig?.channelId;
-    if (!botClient || !channelId) return;
+    if (!botClient || !channelId || this._voiceStatusBlocked) return;
     botClient.rest
       .put(`/channels/${channelId}/voice-status`, {
         body: { status: (text ?? '').slice(0, 500) },
       })
-      .catch((err) => console.warn(`[voice-status ${this.guildId}]`, err.message));
+      .catch((err) => {
+        // 50013 = Missing Permissions: the bot can't set channel status in this
+        // server. It's a cosmetic extra, so stop hammering the REST route for
+        // this connection (reset on the next join) and log it just once.
+        if (err.code === 50013) {
+          this._voiceStatusBlocked = true;
+          console.warn(`[voice-status ${this.guildId}] disabled — missing "Set Voice Channel Status" permission`);
+          return;
+        }
+        console.warn(`[voice-status ${this.guildId}]`, err.message);
+      });
   }
 
   async retireNowPlayingMessage() {
@@ -111,6 +121,7 @@ class GuildQueue {
     if (this.connection && this.connection.state.status !== VoiceConnectionStatus.Destroyed) {
       return this.connection;
     }
+    this._voiceStatusBlocked = false; // fresh join: retry status once more
     this.connection = joinVoiceChannel({
       channelId: voiceChannel.id,
       guildId: voiceChannel.guild.id,
