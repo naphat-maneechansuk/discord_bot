@@ -4,6 +4,7 @@ node_modules/
 .DS_Store
 cookies.txt
 data/
+.cache/
 OPS_LOG.md
 assets/*/*
 !assets/*/README.md

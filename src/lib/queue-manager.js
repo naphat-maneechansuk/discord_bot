@@ -8,7 +8,10 @@ import {
   entersState,
 } from '@discordjs/voice';
 import { spawn } from 'node:child_process';
+import { createReadStream } from 'node:fs';
+import { PassThrough } from 'node:stream';
 import { YT_DLP, COOKIES_ARGS } from './track.js';
+import * as audioCache from './audio-cache.js';
 import { nowPlayingEmbed, nowPlayingComponents } from './embeds.js';
 
 export const MAX_QUEUE = 500;
@@ -285,33 +288,65 @@ class GuildQueue {
       try { this.currentProcess.kill(); } catch {}
     }
 
-    const ytProcess = spawn(
-      YT_DLP,
-      [
-        next.source,
-        '-f', 'bestaudio[ext=webm][acodec=opus]/bestaudio[acodec=opus]/bestaudio[ext=webm]/bestaudio',
-        '-o', '-',
-        '--no-playlist',
-        '--quiet',
-        '--no-warnings',
-        ...COOKIES_ARGS,
-      ],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-    ytProcess.on('error', (err) => console.error('[yt-dlp spawn]', err));
-    let stderrBuf = '';
-    ytProcess.stderr.on('data', (c) => (stderrBuf += c.toString()));
-    ytProcess.on('close', (code) => {
-      if (code === 0 || code === null) return;
-      if (stderrBuf.includes('Broken pipe')) return;
-      if (stderrBuf) console.error(`[yt-dlp ${code}]`, stderrBuf.slice(0, 500));
-    });
-    this.currentProcess = ytProcess;
+    const cacheKey = audioCache.keyFor(next.source);
+    const cachedPath = cacheKey ? await audioCache.get(cacheKey) : null;
 
-    const resource = createAudioResource(ytProcess.stdout, {
-      inputType: StreamType.WebmOpus,
-      inlineVolume: false,
-    });
+    let resource;
+    if (cachedPath) {
+      // Cache hit: stream the stored opus straight off disk — no yt-dlp at all.
+      this.currentProcess = null;
+      const fileStream = createReadStream(cachedPath);
+      fileStream.on('error', (err) => console.error('[audio-cache read]', err.message));
+      resource = createAudioResource(fileStream, {
+        inputType: StreamType.WebmOpus,
+        inlineVolume: false,
+      });
+    } else {
+      const ytProcess = spawn(
+        YT_DLP,
+        [
+          next.source,
+          '-f', 'bestaudio[ext=webm][acodec=opus]/bestaudio[acodec=opus]/bestaudio[ext=webm]/bestaudio',
+          '-o', '-',
+          '--no-playlist',
+          '--quiet',
+          '--no-warnings',
+          ...COOKIES_ARGS,
+        ],
+        { stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      ytProcess.on('error', (err) => console.error('[yt-dlp spawn]', err));
+      let stderrBuf = '';
+      ytProcess.stderr.on('data', (c) => (stderrBuf += c.toString()));
+
+      // Tee the download to the cache while it plays. A clean exit commits the
+      // file; a skip/failure (yt-dlp killed → non-zero/null code) discards the
+      // partial so we never serve a truncated track later.
+      const sink = cacheKey ? audioCache.openWrite(cacheKey) : null;
+      if (sink) {
+        sink.stream.on('error', () => {}); // disk hiccup must not break playback
+        ytProcess.stdout.pipe(sink.stream);
+      }
+      ytProcess.on('close', (code) => {
+        if (sink) {
+          if (code === 0) sink.commit();
+          else sink.abort();
+        }
+        if (code === 0 || code === null) return;
+        if (stderrBuf.includes('Broken pipe')) return;
+        if (stderrBuf) console.error(`[yt-dlp ${code}]`, stderrBuf.slice(0, 500));
+      });
+      this.currentProcess = ytProcess;
+
+      // Feed playback from a separate branch of the tee so the cache writer and
+      // the voice connection each get the full stream independently.
+      const audioSide = new PassThrough();
+      ytProcess.stdout.pipe(audioSide);
+      resource = createAudioResource(audioSide, {
+        inputType: StreamType.WebmOpus,
+        inlineVolume: false,
+      });
+    }
     this.currentResource = resource;
     this.player.play(resource);
     this.#setVoiceStatus(`🎵 ${next.title}`);
