@@ -10,7 +10,7 @@ import {
 import { spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { PassThrough } from 'node:stream';
-import { YT_DLP, COOKIES_ARGS } from './track.js';
+import { YT_DLP, COOKIES_ARGS, resolvePlaylist, searchTracks } from './track.js';
 import * as audioCache from './audio-cache.js';
 import { nowPlayingEmbed, nowPlayingComponents } from './embeds.js';
 
@@ -20,6 +20,14 @@ export const MAX_QUEUE = 500;
 const FAIL_LINGER_MS = 120_000;
 // playback shorter than this counts as a failed stream (yt-dlp 403 etc.)
 const FAIL_THRESHOLD_MS = 3_000;
+// how many fresh tracks autoplay tops the queue up with each time it runs dry
+const AUTOPLAY_BATCH = 4;
+
+// Pull the 11-char YouTube id from a watch/share URL, to build a radio mix.
+function ytVideoId(url) {
+  const m = (url || '').match(/(?:[?&]v=|\/shorts\/|\/embed\/|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
 
 const queues = new Map();
 
@@ -52,6 +60,11 @@ class GuildQueue {
     this.lastError = null;
     this._stopRequested = false;
     this._lingerTimer = null;
+    // Radio mode: when on, a drained queue is refilled with tracks related to
+    // the last song instead of the bot leaving. _playedKeys remembers what's
+    // been played this session so the radio doesn't loop back on itself.
+    this.autoplay = false;
+    this._playedKeys = new Set();
   }
 
   setJumpPage(page) {
@@ -149,6 +162,11 @@ class GuildQueue {
     if (!['off', 'track', 'queue'].includes(mode)) return false;
     this.loopMode = mode;
     return true;
+  }
+
+  setAutoplay(on) {
+    this.autoplay = !!on;
+    return this.autoplay;
   }
 
   cycleLoopMode() {
@@ -253,6 +271,14 @@ class GuildQueue {
       nextTrack = this.tracks.shift();
     }
 
+    // Radio mode: the queue ran dry but autoplay is on — pull tracks related to
+    // the song that just finished and keep the music going instead of leaving.
+    if (!nextTrack && this.autoplay && !failed && this.current) {
+      await this.#fillAutoplay(this.current);
+      nextTrack = this.tracks.shift();
+      notify = true;
+    }
+
     if (!nextTrack) {
       this.current = null;
       await this.retireNowPlayingMessage();
@@ -276,6 +302,37 @@ class GuildQueue {
     await this.#playTrack(next, { notify });
   }
 
+  // Fetch tracks related to `seed` (YouTube radio mix, falling back to a search)
+  // and enqueue a few not already played this session. Returns how many it added.
+  async #fillAutoplay(seed) {
+    try {
+      const id = ytVideoId(seed.source);
+      let candidates = [];
+      if (id) {
+        const mixUrl = `https://www.youtube.com/watch?v=${id}&list=RD${id}`;
+        candidates = await resolvePlaylist(mixUrl, 'autoplay', 25);
+      }
+      if (!candidates.length) {
+        const query = seed.artist || seed.title;
+        if (query) candidates = await searchTracks(query, 15);
+      }
+      let added = 0;
+      for (const track of candidates) {
+        if (added >= AUTOPLAY_BATCH) break;
+        const key = audioCache.keyFor(track.source);
+        if (!key || this._playedKeys.has(key)) continue; // skip repeats
+        if (this.enqueue(track)) {
+          this._playedKeys.add(key);
+          added++;
+        }
+      }
+      return added;
+    } catch (err) {
+      console.warn(`[autoplay ${this.guildId}]`, err.message);
+      return 0;
+    }
+  }
+
   async #playTrack(next, { notify = true } = {}) {
     this.current = next;
     this.lastError = null;
@@ -289,6 +346,7 @@ class GuildQueue {
     }
 
     const cacheKey = audioCache.keyFor(next.source);
+    if (cacheKey) this._playedKeys.add(cacheKey); // so radio won't re-pick it
     const cachedPath = cacheKey ? await audioCache.get(cacheKey) : null;
 
     let resource;
@@ -428,6 +486,8 @@ class GuildQueue {
     this.nowPlayingMessage = null;
     this.currentResource = null;
     this.history = [];
+    this.autoplay = false;
+    this._playedKeys.clear();
     queues.delete(this.guildId);
   }
 }
