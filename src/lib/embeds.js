@@ -4,8 +4,18 @@ import {
   ButtonBuilder,
   ButtonStyle,
   StringSelectMenuBuilder,
+  ContainerBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
+  TextDisplayBuilder,
+  SeparatorBuilder,
+  MessageFlags,
 } from 'discord.js';
 import { formatDuration } from './track.js';
+
+// how many upcoming tracks the Now Playing card previews inline (full queue
+// still lives behind the 📋 Queue button / /queue)
+const UP_NEXT_PREVIEW = 3;
 
 const PALETTE = [0x5865f2, 0xeb459e, 0xed4245, 0xfaa61a, 0x57f287, 0x9b59b6, 0x3498db, 0xe67e22];
 const COLOR_PAUSED = 0xfaa61a;
@@ -21,30 +31,71 @@ function colorFromSource(source) {
   return PALETTE[hash % PALETTE.length];
 }
 
-export function nowPlayingEmbed(track, opts = {}) {
-  const { paused = false, queue = null } = opts;
-  const e = new EmbedBuilder()
-    .setColor(paused ? COLOR_PAUSED : colorFromSource(track.source))
-    .setAuthor({ name: paused ? '⏸ Paused' : '🎵 Now Playing' })
-    .setTitle(track.title.slice(0, 256))
-    .setURL(track.source ?? null);
+// Build the inline "Up Next" preview text, or null when the queue is empty.
+function upNextContent(queue) {
+  const tracks = queue?.tracks ?? [];
+  if (tracks.length === 0) return null;
+  const lines = ['**Up Next**'];
+  tracks.slice(0, UP_NEXT_PREVIEW).forEach((t, i) => {
+    const title = t.source ? `[${t.title}](${t.source})` : t.title;
+    lines.push(`\`${i + 1}.\` ${title} \`${formatDuration(t.duration)}\``);
+  });
+  const more = tracks.length - UP_NEXT_PREVIEW;
+  if (more > 0) lines.push(`-# ＋${more} more song${more === 1 ? '' : 's'}`);
+  return lines.join('\n');
+}
 
-  if (track.artist) e.setDescription(`by **${track.artist}**`);
-  if (track.thumbnail) e.setThumbnail(track.thumbnail);
+// The Now Playing card — a Components V2 message (cover art, track meta,
+// inline Up Next preview, controls, all in one accent-colored container).
+// Returns a ready-to-send/edit payload; callers must not add embeds/content
+// to it (forbidden once MessageFlags.IsComponentsV2 is set).
+export function nowPlayingPayload(track, opts = {}) {
+  const { paused = false, queue = null, progressSeconds = 0 } = opts;
 
-  const shuffle = queue?.shuffle ? 'On' : 'Off';
-  const loop =
-    queue?.loopMode === 'track' ? 'Track' : queue?.loopMode === 'queue' ? 'Queue' : 'Off';
-  e.addFields(
-    { name: '⏱ Duration', value: formatDuration(track.duration), inline: true },
-    { name: '🔀 Shuffle', value: shuffle, inline: true },
-    { name: '🔁 Loop', value: loop, inline: true },
+  const container = new ContainerBuilder().setAccentColor(
+    paused ? COLOR_PAUSED : colorFromSource(track.source),
   );
 
-  if (track.requestedBy) {
-    e.setFooter({ text: `Requested by ${track.requestedBy}` });
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(paused ? '### ⏸️ Paused' : '### 🎵 Now Playing'),
+  );
+
+  if (track.thumbnail) {
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(
+        new MediaGalleryItemBuilder().setURL(track.thumbnail).setDescription('Cover art'),
+      ),
+    );
   }
-  return e;
+
+  const loop =
+    queue?.loopMode === 'track' ? 'Track' : queue?.loopMode === 'queue' ? 'Queue' : 'Off';
+  const meta = [
+    `⏱️ \`${formatDuration(progressSeconds)} / ${formatDuration(track.duration)}\``,
+    `🔀 ${queue?.shuffle ? 'On' : 'Off'}`,
+    `🔁 ${loop}`,
+  ].join('   ');
+  const info = [track.source ? `**[${track.title}](${track.source})**` : `**${track.title}**`];
+  if (track.artist) info.push(`by **${track.artist}**`);
+  info.push(meta);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(info.join('\n')));
+
+  const upNext = upNextContent(queue);
+  if (upNext) {
+    container.addSeparatorComponents(new SeparatorBuilder());
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(upNext));
+  }
+
+  container.addSeparatorComponents(new SeparatorBuilder());
+  container.addActionRowComponents(...nowPlayingComponents(queue));
+
+  if (track.requestedBy) {
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`-# Requested by ${track.requestedBy}`),
+    );
+  }
+
+  return { components: [container], flags: MessageFlags.IsComponentsV2 };
 }
 
 export function queuedEmbed(track, position) {
@@ -116,11 +167,15 @@ export function queueListEmbed(queue) {
     .setFooter({ text: `Total duration: ${formatDuration(totalSec)}` });
 }
 
-export function stoppedEmbed() {
-  return new EmbedBuilder()
-    .setColor(COLOR_STOPPED)
-    .setAuthor({ name: '⏹ Stopped' })
-    .setDescription('Queue cleared. Disconnected from voice.');
+// Used when editing the Now Playing card in place after Stop — a V2 message
+// can't be downgraded back to a classic embed, so the stopped state is V2 too.
+export function stoppedPayload() {
+  const container = new ContainerBuilder()
+    .setAccentColor(COLOR_STOPPED)
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent('### ⏹️ Stopped\nQueue cleared. Disconnected from voice.'),
+    );
+  return { components: [container], flags: MessageFlags.IsComponentsV2 };
 }
 
 export function searchResultsEmbed(query, results) {

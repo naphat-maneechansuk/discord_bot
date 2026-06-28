@@ -7,7 +7,7 @@ import { resolveTrack } from '../lib/track.js';
 import { registerAuthRoutes, requireAuth } from './auth.js';
 import { toggleLike, getUserLikes, listLikers } from '../lib/likes.js';
 import { isGuildDisabled, setGuildDisabled } from '../lib/guild-state.js';
-import { nowPlayingEmbed, nowPlayingComponents } from '../lib/embeds.js';
+import { nowPlayingPayload } from '../lib/embeds.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.WEB_PORT ?? 3000;
@@ -276,10 +276,9 @@ export function startWebServer(client) {
         await queue.start();
         await queue.retireNowPlayingMessage();
         if (queue.textChannel) {
-          queue.nowPlayingMessage = await queue.textChannel.send({
-            embeds: [nowPlayingEmbed(queue.current, { queue, progressSeconds: 0 })],
-            components: nowPlayingComponents(queue),
-          });
+          queue.nowPlayingMessage = await queue.textChannel.send(
+            nowPlayingPayload(queue.current, { queue, progressSeconds: 0 }),
+          );
         }
       } else {
         await queue.refreshNowPlayingMessage();

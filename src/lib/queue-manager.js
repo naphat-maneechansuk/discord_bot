@@ -12,7 +12,7 @@ import { createReadStream } from 'node:fs';
 import { PassThrough } from 'node:stream';
 import { YT_DLP, COOKIES_ARGS, resolvePlaylist, searchTracks } from './track.js';
 import * as audioCache from './audio-cache.js';
-import { nowPlayingEmbed, nowPlayingComponents } from './embeds.js';
+import { nowPlayingPayload } from './embeds.js';
 
 export const MAX_QUEUE = 500;
 // how long to stay in the voice channel after a stream failure empties the
@@ -412,10 +412,9 @@ class GuildQueue {
     if (notify && this.textChannel) {
       await this.retireNowPlayingMessage();
       try {
-        this.nowPlayingMessage = await this.textChannel.send({
-          embeds: [nowPlayingEmbed(next, { queue: this, progressSeconds: 0 })],
-          components: nowPlayingComponents(this),
-        });
+        this.nowPlayingMessage = await this.textChannel.send(
+          nowPlayingPayload(next, { queue: this, progressSeconds: 0 }),
+        );
       } catch {}
     }
   }
@@ -423,16 +422,13 @@ class GuildQueue {
   async refreshNowPlayingMessage() {
     if (!this.nowPlayingMessage || !this.current) return;
     try {
-      await this.nowPlayingMessage.edit({
-        embeds: [
-          nowPlayingEmbed(this.current, {
-            paused: this.status() === 'paused',
-            queue: this,
-            progressSeconds: this.getProgressSeconds(),
-          }),
-        ],
-        components: nowPlayingComponents(this),
-      });
+      await this.nowPlayingMessage.edit(
+        nowPlayingPayload(this.current, {
+          paused: this.status() === 'paused',
+          queue: this,
+          progressSeconds: this.getProgressSeconds(),
+        }),
+      );
     } catch {}
   }
 
@@ -449,16 +445,13 @@ class GuildQueue {
       }
       if (!this.current) return;
       try {
-        this.nowPlayingMessage = await this.textChannel.send({
-          embeds: [
-            nowPlayingEmbed(this.current, {
-              paused: this.status() === 'paused',
-              queue: this,
-              progressSeconds: this.getProgressSeconds(),
-            }),
-          ],
-          components: nowPlayingComponents(this),
-        });
+        this.nowPlayingMessage = await this.textChannel.send(
+          nowPlayingPayload(this.current, {
+            paused: this.status() === 'paused',
+            queue: this,
+            progressSeconds: this.getProgressSeconds(),
+          }),
+        );
       } catch (err) {
         console.error('[bump]', err.message);
       }

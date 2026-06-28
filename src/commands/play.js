@@ -9,10 +9,9 @@ import {
   formatDuration,
 } from '../lib/track.js';
 import {
-  nowPlayingEmbed,
+  nowPlayingPayload,
   queuedEmbed,
   playlistLoadedEmbed,
-  nowPlayingComponents,
   searchResultsEmbed,
   searchResultsSelect,
   friendlyErrorEmbed,
@@ -148,10 +147,9 @@ export async function execute(interaction) {
       await interaction.followUp({
         embeds: [playlistLoadedEmbed(added, { started: true, rejected, maxQueue: MAX_QUEUE })],
       });
-      const npMsg = await interaction.channel.send({
-        embeds: [nowPlayingEmbed(queue.current, { queue, progressSeconds: 0 })],
-        components: nowPlayingComponents(queue),
-      });
+      const npMsg = await interaction.channel.send(
+        nowPlayingPayload(queue.current, { queue, progressSeconds: 0 }),
+      );
       queue.nowPlayingMessage = npMsg;
       return;
     }
@@ -183,10 +181,9 @@ export async function execute(interaction) {
     await queue.start();
     await queue.retireNowPlayingMessage();
     await interaction.followUp({ embeds: [queuedEmbed(track, 1)] });
-    const npMsg = await interaction.channel.send({
-      embeds: [nowPlayingEmbed(track, { queue, progressSeconds: 0 })],
-      components: nowPlayingComponents(queue),
-    });
+    const npMsg = await interaction.channel.send(
+      nowPlayingPayload(track, { queue, progressSeconds: 0 }),
+    );
     queue.nowPlayingMessage = npMsg;
     return;
   }

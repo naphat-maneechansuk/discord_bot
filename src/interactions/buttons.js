@@ -2,24 +2,18 @@ import { MessageFlags } from 'discord.js';
 import { peekQueue } from '../lib/queue-manager.js';
 import { toggleLike } from '../lib/likes.js';
 import {
-  nowPlayingEmbed,
-  stoppedEmbed,
+  nowPlayingPayload,
+  stoppedPayload,
   queueListEmbed,
-  nowPlayingComponents,
   notify,
 } from '../lib/embeds.js';
 
 function rebuiltCard(q) {
-  return {
-    embeds: [
-      nowPlayingEmbed(q.current, {
-        paused: q.status() === 'paused',
-        queue: q,
-        progressSeconds: q.getProgressSeconds(),
-      }),
-    ],
-    components: nowPlayingComponents(q),
-  };
+  return nowPlayingPayload(q.current, {
+    paused: q.status() === 'paused',
+    queue: q,
+    progressSeconds: q.getProgressSeconds(),
+  });
 }
 
 export async function handleMusicButton(interaction) {
@@ -82,7 +76,7 @@ export async function handleMusicButton(interaction) {
     }
     case 'stop': {
       q.stop();
-      return interaction.update({ embeds: [stoppedEmbed()], components: [] });
+      return interaction.update(stoppedPayload());
     }
     case 'like': {
       let liked, count;

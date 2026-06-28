@@ -3,10 +3,9 @@ import { getQueue, peekQueue, MAX_QUEUE } from '../lib/queue-manager.js';
 import { resolveTrack } from '../lib/track.js';
 import { getUserLikes } from '../lib/likes.js';
 import {
-  nowPlayingEmbed,
+  nowPlayingPayload,
   queuedEmbed,
   playlistLoadedEmbed,
-  nowPlayingComponents,
   notify,
   friendlyErrorEmbed,
 } from '../lib/embeds.js';
@@ -65,10 +64,9 @@ async function handleSearchPick(interaction) {
       embeds: [queuedEmbed(track, 1)],
       components: [],
     });
-    const npMsg = await interaction.channel.send({
-      embeds: [nowPlayingEmbed(track, { queue, progressSeconds: 0 })],
-      components: nowPlayingComponents(queue),
-    });
+    const npMsg = await interaction.channel.send(
+      nowPlayingPayload(track, { queue, progressSeconds: 0 }),
+    );
     queue.nowPlayingMessage = npMsg;
     return;
   }
@@ -150,10 +148,9 @@ async function handleFriendPick(interaction) {
       embeds: [playlistLoadedEmbed(added, { started: true, rejected, maxQueue: MAX_QUEUE })],
       components: [],
     });
-    const npMsg = await interaction.channel.send({
-      embeds: [nowPlayingEmbed(queue.current, { queue, progressSeconds: 0 })],
-      components: nowPlayingComponents(queue),
-    });
+    const npMsg = await interaction.channel.send(
+      nowPlayingPayload(queue.current, { queue, progressSeconds: 0 }),
+    );
     queue.nowPlayingMessage = npMsg;
     return;
   }
