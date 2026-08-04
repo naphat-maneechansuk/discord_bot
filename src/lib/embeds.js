@@ -5,17 +5,15 @@ import {
   ButtonStyle,
   StringSelectMenuBuilder,
   ContainerBuilder,
-  MediaGalleryBuilder,
-  MediaGalleryItemBuilder,
+  SectionBuilder,
+  ThumbnailBuilder,
   TextDisplayBuilder,
-  SeparatorBuilder,
   MessageFlags,
 } from 'discord.js';
 import { formatDuration } from './track.js';
 
-// how many upcoming tracks the Now Playing card previews inline (full queue
-// still lives behind the 📋 Queue button / /queue)
-const UP_NEXT_PREVIEW = 3;
+// longest song title the one-line "up next" hint keeps before trimming
+const UP_NEXT_TITLE_MAX = 40;
 
 const PALETTE = [0x5865f2, 0xeb459e, 0xed4245, 0xfaa61a, 0x57f287, 0x9b59b6, 0x3498db, 0xe67e22];
 const COLOR_PAUSED = 0xfaa61a;
@@ -31,22 +29,31 @@ function colorFromSource(source) {
   return PALETTE[hash % PALETTE.length];
 }
 
-// Build the inline "Up Next" preview text, or null when the queue is empty.
-function upNextContent(queue) {
-  const tracks = queue?.tracks ?? [];
-  if (tracks.length === 0) return null;
-  const lines = ['**Up Next**'];
-  tracks.slice(0, UP_NEXT_PREVIEW).forEach((t, i) => {
-    const title = t.source ? `[${t.title}](${t.source})` : t.title;
-    lines.push(`\`${i + 1}.\` ${title} \`${formatDuration(t.duration)}\``);
-  });
-  const more = tracks.length - UP_NEXT_PREVIEW;
-  if (more > 0) lines.push(`-# ＋${more} more song${more === 1 ? '' : 's'}`);
-  return lines.join('\n');
+function trimTitle(title, max) {
+  const clean = String(title ?? '');
+  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
-// The Now Playing card — a Components V2 message (cover art, track meta,
-// inline Up Next preview, controls, all in one accent-colored container).
+// One subtext line closing the card: what plays next (with the queue depth)
+// and who asked for the current track. Null when there is nothing to say.
+function cardFooter(track, queue) {
+  const parts = [];
+  const next = queue?.tracks?.[0];
+  if (next) {
+    const more = queue.tracks.length - 1;
+    const tail = more > 0 ? ` ・ +${more} more` : '';
+    parts.push(`Up next: ${trimTitle(next.title, UP_NEXT_TITLE_MAX)}${tail}`);
+  }
+  if (track.requestedBy) parts.push(`Requested by ${track.requestedBy}`);
+  if (parts.length === 0) return null;
+  return `-# ${parts.join('  ·  ')}`;
+}
+
+// The Now Playing card — one accent-colored Components V2 container kept
+// deliberately short: title + elapsed time beside a small cover thumbnail,
+// the controls, and a single subtext line. Shuffle/loop/queue state is read
+// off the button colors instead of spending lines on it, and the full queue
+// stays behind the 📋 button / /queue.
 // Returns a ready-to-send/edit payload; callers must not add embeds/content
 // to it (forbidden once MessageFlags.IsComponentsV2 is set).
 export function nowPlayingPayload(track, opts = {}) {
@@ -56,44 +63,33 @@ export function nowPlayingPayload(track, opts = {}) {
     paused ? COLOR_PAUSED : colorFromSource(track.source),
   );
 
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(paused ? '### ⏸️ Paused' : '### 🎵 Now Playing'),
+  const title = track.source ? `**[${track.title}](${track.source})**` : `**${track.title}**`;
+  // formatDuration renders 0 as "?:??", which is right for an unknown track
+  // length but wrong for a song that simply just started.
+  const elapsed = progressSeconds > 0 ? formatDuration(progressSeconds) : '0:00';
+  const meta = [track.artist, `\`${elapsed} / ${formatDuration(track.duration)}\``]
+    .filter(Boolean)
+    .join('  ·  ');
+  const header = new TextDisplayBuilder().setContent(
+    `${paused ? '⏸️ **Paused**' : '🎵 **Now Playing**'}\n${title}\n${meta}`,
   );
 
   if (track.thumbnail) {
-    container.addMediaGalleryComponents(
-      new MediaGalleryBuilder().addItems(
-        new MediaGalleryItemBuilder().setURL(track.thumbnail).setDescription('Cover art'),
-      ),
+    container.addSectionComponents(
+      new SectionBuilder()
+        .addTextDisplayComponents(header)
+        .setThumbnailAccessory(
+          new ThumbnailBuilder().setURL(track.thumbnail).setDescription('Cover art'),
+        ),
     );
+  } else {
+    container.addTextDisplayComponents(header);
   }
 
-  const loop =
-    queue?.loopMode === 'track' ? 'Track' : queue?.loopMode === 'queue' ? 'Queue' : 'Off';
-  const meta = [
-    `⏱️ \`${formatDuration(progressSeconds)} / ${formatDuration(track.duration)}\``,
-    `🔀 ${queue?.shuffle ? 'On' : 'Off'}`,
-    `🔁 ${loop}`,
-  ].join('   ');
-  const info = [track.source ? `**[${track.title}](${track.source})**` : `**${track.title}**`];
-  if (track.artist) info.push(`by **${track.artist}**`);
-  info.push(meta);
-  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(info.join('\n')));
-
-  const upNext = upNextContent(queue);
-  if (upNext) {
-    container.addSeparatorComponents(new SeparatorBuilder());
-    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(upNext));
-  }
-
-  container.addSeparatorComponents(new SeparatorBuilder());
   container.addActionRowComponents(...nowPlayingComponents(queue));
 
-  if (track.requestedBy) {
-    container.addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(`-# Requested by ${track.requestedBy}`),
-    );
-  }
+  const footer = cardFooter(track, queue);
+  if (footer) container.addTextDisplayComponents(new TextDisplayBuilder().setContent(footer));
 
   return { components: [container], flags: MessageFlags.IsComponentsV2 };
 }
@@ -178,32 +174,6 @@ export function stoppedPayload() {
   return { components: [container], flags: MessageFlags.IsComponentsV2 };
 }
 
-export function searchResultsEmbed(query, results) {
-  return new EmbedBuilder()
-    .setColor(COLOR_WARN)
-    .setTitle('🔍 Search Results')
-    .setDescription(
-      `Found **${results.length}** results for "${query}" — pick one to add to queue:`,
-    );
-}
-
-const NUMBER_EMOJI = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
-
-export function searchResultsSelect(results) {
-  const select = new StringSelectMenuBuilder()
-    .setCustomId('music:search')
-    .setPlaceholder('Choose a song…')
-    .addOptions(
-      results.map((r, i) => ({
-        label: r.title.slice(0, 100),
-        description: `${formatDuration(r.duration)}${r.channel ? ` · ${r.channel}` : ''}`.slice(0, 100),
-        value: r.source.slice(0, 100),
-        emoji: NUMBER_EMOJI[i] ?? undefined,
-      })),
-    );
-  return new ActionRowBuilder().addComponents(select);
-}
-
 export function friendListEmbed(friends) {
   const e = new EmbedBuilder().setColor(COLOR_INFO).setAuthor({ name: '👥 Friends' });
   if (!friends.length) {
@@ -251,11 +221,11 @@ const ERROR_RULES = [
     build: () =>
       new EmbedBuilder()
         .setColor(COLOR_STOPPED)
-        .setAuthor({ name: '🍪 Cookie หมดอายุ' })
-        .setTitle('ไม่สามารถโหลดเพลงจาก YouTube ได้')
+        .setAuthor({ name: '🍪 Cookie expired' })
+        .setTitle("Can't load this song from YouTube")
         .setDescription(
-          'Cookie ที่บอทใช้ยืนยันตัวตนกับ YouTube หมดอายุแล้ว\n' +
-            'กรุณาแจ้งเจ้าของบอทให้เปลี่ยน `cookies.txt` ใหม่',
+          'The cookie the bot uses to prove it is not a robot has expired.\n' +
+            'Ask the bot owner to refresh `cookies.txt`.',
         )
         .setFooter({ text: 'YouTube cookie expired — owner action required' }),
   },
@@ -272,9 +242,9 @@ const ERROR_RULES = [
     build: () =>
       new EmbedBuilder()
         .setColor(COLOR_STOPPED)
-        .setAuthor({ name: '🚫 วิดีโอใช้งานไม่ได้' })
-        .setTitle('เพลงนี้เล่นไม่ได้')
-        .setDescription('วิดีโอถูกลบ หรือเจ้าของตั้งเป็นส่วนตัวแล้ว ลองหาเพลงอื่นแทน'),
+        .setAuthor({ name: '🚫 Video unavailable' })
+        .setTitle("This song can't be played")
+        .setDescription('The video was deleted or made private. Try another song.'),
   },
   {
     kind: 'geo',
@@ -287,9 +257,9 @@ const ERROR_RULES = [
     build: () =>
       new EmbedBuilder()
         .setColor(COLOR_STOPPED)
-        .setAuthor({ name: '🌍 ติดข้อจำกัดภูมิภาค' })
-        .setTitle('เพลงนี้ถูกบล็อกในภูมิภาคของเซิร์ฟเวอร์')
-        .setDescription('เซิร์ฟเวอร์บอทอยู่ฟินแลนด์ และเพลงนี้บล็อกที่นั่น ลองหาเพลงอื่นแทน'),
+        .setAuthor({ name: '🌍 Region locked' })
+        .setTitle("This song is blocked where the bot is hosted")
+        .setDescription('YouTube refuses to serve it from the bot\'s region. Try another song.'),
   },
   {
     kind: 'live',
@@ -302,9 +272,9 @@ const ERROR_RULES = [
     build: () =>
       new EmbedBuilder()
         .setColor(COLOR_WARN)
-        .setAuthor({ name: '📡 ยังไม่เริ่ม Live' })
-        .setTitle('ไลฟ์/พรีเมียร์ยังไม่เริ่ม')
-        .setDescription('วิดีโอนี้เป็นไลฟ์ที่ยังไม่ออกอากาศ ลองมาใหม่ตอนเริ่ม หรือหาคลิปอื่นแทน'),
+        .setAuthor({ name: '📡 Live not started' })
+        .setTitle('This stream or premiere is not on air yet')
+        .setDescription('Come back once it starts, or pick another video.'),
   },
   {
     kind: 'rate-limit',
@@ -312,9 +282,9 @@ const ERROR_RULES = [
     build: () =>
       new EmbedBuilder()
         .setColor(COLOR_WARN)
-        .setAuthor({ name: '⏳ YouTube จำกัดการเรียก' })
-        .setTitle('โดน rate-limit ชั่วคราว')
-        .setDescription('YouTube จำกัดการเรียกข้อมูลจากบอทอยู่ รอสัก 1–2 นาทีแล้วลองใหม่'),
+        .setAuthor({ name: '⏳ Rate limited' })
+        .setTitle('YouTube is throttling the bot')
+        .setDescription('Too many requests in a row. Wait a minute or two and try again.'),
   },
   {
     kind: 'network',
@@ -330,9 +300,9 @@ const ERROR_RULES = [
     build: () =>
       new EmbedBuilder()
         .setColor(COLOR_WARN)
-        .setAuthor({ name: '🌐 เชื่อมต่อไม่ได้' })
-        .setTitle('เครือข่ายมีปัญหาชั่วคราว')
-        .setDescription('โหลดข้อมูลจาก YouTube ไม่สำเร็จ รอสักครู่แล้วลองใหม่'),
+        .setAuthor({ name: '🌐 Connection problem' })
+        .setTitle('Temporary network trouble')
+        .setDescription("Couldn't reach YouTube. Wait a moment and try again."),
   },
   {
     kind: 'unsupported',
@@ -340,9 +310,9 @@ const ERROR_RULES = [
     build: () =>
       new EmbedBuilder()
         .setColor(COLOR_STOPPED)
-        .setAuthor({ name: '🔗 ลิงก์ไม่รองรับ' })
-        .setTitle('บอทเปิดลิงก์นี้ไม่ได้')
-        .setDescription('รองรับเฉพาะลิงก์ YouTube หรือคำค้นหา ลองส่งลิงก์อื่นหรือพิมพ์ชื่อเพลงแทน'),
+        .setAuthor({ name: '🔗 Link not supported' })
+        .setTitle("The bot can't open this link")
+        .setDescription('Only YouTube links or plain search text work. Try a song name instead.'),
   },
   {
     kind: 'no-results',
@@ -350,9 +320,9 @@ const ERROR_RULES = [
     build: () =>
       new EmbedBuilder()
         .setColor(COLOR_WARN)
-        .setAuthor({ name: '🔎 ไม่พบผลลัพธ์' })
-        .setTitle('ค้นหาไม่เจอ')
-        .setDescription('ลองเปลี่ยนคำค้นหา หรือวางลิงก์ YouTube ตรงๆ'),
+        .setAuthor({ name: '🔎 No results' })
+        .setTitle('Nothing matched that search')
+        .setDescription('Try different words, or paste a YouTube link directly.'),
   },
   {
     kind: 'spawn',
@@ -360,9 +330,9 @@ const ERROR_RULES = [
     build: () =>
       new EmbedBuilder()
         .setColor(COLOR_STOPPED)
-        .setAuthor({ name: '⚙️ บอทตั้งค่าผิด' })
-        .setTitle('ไม่พบ yt-dlp บนเซิร์ฟเวอร์')
-        .setDescription('เครื่องมือภายในของบอทหาย กรุณาแจ้งเจ้าของบอท')
+        .setAuthor({ name: '⚙️ Bot misconfigured' })
+        .setTitle('yt-dlp is missing on the server')
+        .setDescription("The bot's downloader is gone. Tell the bot owner.")
         .setFooter({ text: 'yt-dlp binary missing — owner action required' }),
   },
 ];
@@ -406,6 +376,12 @@ export function notify(kind, text) {
   return new EmbedBuilder().setColor(cfg.color).setAuthor({ name: `${cfg.icon} ${text}` });
 }
 
+// Icon-only so the whole control set fits two short rows. A toggle that is on
+// turns green — that is what replaced the old "🔀 On   🔁 Track" status line.
+function iconButton(customId, emoji, style = ButtonStyle.Secondary) {
+  return new ButtonBuilder().setCustomId(customId).setEmoji(emoji).setStyle(style);
+}
+
 function loopButton(loopMode) {
   const map = {
     off: { emoji: '🔁', style: ButtonStyle.Secondary },
@@ -413,50 +389,21 @@ function loopButton(loopMode) {
     queue: { emoji: '🔁', style: ButtonStyle.Success },
   };
   const cfg = map[loopMode] ?? map.off;
-  return new ButtonBuilder()
-    .setCustomId('music:loop')
-    .setLabel('Loop')
-    .setEmoji(cfg.emoji)
-    .setStyle(cfg.style);
-}
-
-function shuffleButton(on) {
-  return new ButtonBuilder()
-    .setCustomId('music:shuffle')
-    .setLabel('Shuffle')
-    .setEmoji('🔀')
-    .setStyle(on ? ButtonStyle.Success : ButtonStyle.Secondary);
+  return iconButton('music:loop', cfg.emoji, cfg.style);
 }
 
 export function controlsRows({ paused = false, loopMode = 'off', shuffle = false, hasHistory = false } = {}) {
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(paused ? 'music:resume' : 'music:pause')
-      .setLabel(paused ? 'Resume' : 'Pause')
-      .setEmoji(paused ? '▶️' : '⏸️')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('music:prev')
-      .setLabel('Prev')
-      .setEmoji('⏮️')
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(!hasHistory),
-    new ButtonBuilder()
-      .setCustomId('music:skip')
-      .setLabel('Skip')
-      .setEmoji('⏭️')
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId('music:stop')
-      .setLabel('Stop')
-      .setEmoji('⏹️')
-      .setStyle(ButtonStyle.Danger),
+    iconButton('music:prev', '⏮️').setDisabled(!hasHistory),
+    iconButton(paused ? 'music:resume' : 'music:pause', paused ? '▶️' : '⏸️'),
+    iconButton('music:skip', '⏭️'),
+    iconButton('music:stop', '⏹️', ButtonStyle.Danger),
+    iconButton('music:like', '❤️'),
   );
   const row2 = new ActionRowBuilder().addComponents(
-    shuffleButton(shuffle),
+    iconButton('music:shuffle', '🔀', shuffle ? ButtonStyle.Success : ButtonStyle.Secondary),
     loopButton(loopMode),
-    new ButtonBuilder().setCustomId('music:queue').setLabel('Queue').setEmoji('📋').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('music:like').setLabel('Like').setStyle(ButtonStyle.Secondary),
+    iconButton('music:queue', '📋', ButtonStyle.Primary),
   );
   return [row1, row2];
 }

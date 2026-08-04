@@ -47,7 +47,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isChatInputCommand()) {
       if (guildDisabled) {
         await interaction.reply({
-          content: '⛔ บอทถูกปิดใช้งานใน server นี้',
+          content: '⛔ The bot is disabled in this server.',
           flags: MessageFlags.Ephemeral,
         });
         return;
