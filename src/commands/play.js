@@ -4,7 +4,6 @@ import {
   resolveTrack,
   resolvePlaylist,
   isPlaylistUrl,
-  searchTracks,
   searchSuggestions,
   formatDuration,
 } from '../lib/track.js';
@@ -12,8 +11,6 @@ import {
   nowPlayingPayload,
   queuedEmbed,
   playlistLoadedEmbed,
-  searchResultsEmbed,
-  searchResultsSelect,
   friendlyErrorEmbed,
 } from '../lib/embeds.js';
 
@@ -94,24 +91,10 @@ export async function execute(interaction) {
   }
 
   await interaction.deferReply();
-  const isUrl = /^https?:\/\//i.test(query);
 
-  if (!isUrl) {
-    let results;
-    try {
-      results = await searchTracks(query, 5);
-    } catch (err) {
-      const card = friendlyErrorEmbed(err);
-      if (card) return interaction.followUp({ embeds: [card] });
-      return interaction.followUp(`Search failed: ${err.message}`);
-    }
-    if (!results.length) return interaction.followUp(`No results for "${query}".`);
-    return interaction.followUp({
-      embeds: [searchResultsEmbed(query, results)],
-      components: [searchResultsSelect(results)],
-    });
-  }
-
+  // A plain query goes straight to its top YouTube hit — the autocomplete list
+  // is where the user picks a specific song, so submitting text as-is means
+  // "just play it" rather than another menu. resolveTrack does the ytsearch1.
   const queue = getQueue(interaction.guildId);
   queue.textChannel = interaction.channel;
 

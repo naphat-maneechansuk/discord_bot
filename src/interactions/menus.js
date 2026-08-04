@@ -19,6 +19,9 @@ export async function handleMusicSelect(interaction) {
   if (action === 'friend') return handleFriendPick(interaction);
 }
 
+// /play no longer posts a search picker (a typed query plays its top hit), but
+// pickers sent before that change are still sitting in old channels — keep
+// answering them so those buttons don't fail.
 async function handleSearchPick(interaction) {
   const url = interaction.values[0];
   const voiceChannel = interaction.member?.voice?.channel;
