@@ -13,6 +13,7 @@ import { PassThrough } from 'node:stream';
 import { YT_DLP, COOKIES_ARGS, resolvePlaylist, searchTracks } from './track.js';
 import * as audioCache from './audio-cache.js';
 import { nowPlayingPayload } from './embeds.js';
+import { setVoiceStatus, clearVoiceStatus, unblockChannel } from './voice-status.js';
 
 export const MAX_QUEUE = 500;
 // how long to stay in the voice channel after a stream failure empties the
@@ -30,13 +31,6 @@ function ytVideoId(url) {
 }
 
 const queues = new Map();
-
-// discord.js client, injected at startup — needed to resolve the voice
-// channel object for setStatus() (the voice connection alone can't)
-let botClient = null;
-export function setBotClient(client) {
-  botClient = client;
-}
 
 class GuildQueue {
   constructor(guildId) {
@@ -102,28 +96,11 @@ class GuildQueue {
     return true;
   }
 
-  // "voice channel status" — the short text under the channel name in the
-  // channel list. Per-channel per-guild, so it works with the bot playing
-  // different songs in multiple servers at once. The endpoint is not in
-  // discord.js/discord-api-types yet, so hit the REST route directly.
-  #setVoiceStatus(text) {
-    const channelId = this.connection?.joinConfig?.channelId;
-    if (!botClient || !channelId || this._voiceStatusBlocked) return;
-    botClient.rest
-      .put(`/channels/${channelId}/voice-status`, {
-        body: { status: (text ?? '').slice(0, 500) },
-      })
-      .catch((err) => {
-        // 50013 = Missing Permissions: the bot can't set channel status in this
-        // server. It's a cosmetic extra, so stop hammering the REST route for
-        // this connection (reset on the next join) and log it just once.
-        if (err.code === 50013) {
-          this._voiceStatusBlocked = true;
-          console.warn(`[voice-status ${this.guildId}] disabled — missing "Set Voice Channel Status" permission`);
-          return;
-        }
-        console.warn(`[voice-status ${this.guildId}]`, err.message);
-      });
+  // The channel the bot is (or last was) connected to — the target for the
+  // voice channel status, which is per-channel so it stays correct with the
+  // bot playing in several servers at once.
+  get voiceChannelId() {
+    return this.connection?.joinConfig?.channelId ?? null;
   }
 
   async retireNowPlayingMessage() {
@@ -134,10 +111,16 @@ class GuildQueue {
   }
 
   async ensureConnection(voiceChannel) {
+    // A close in flight still owns the old connection — let it finish clearing
+    // the status and disconnecting before joining again on top of it.
+    if (this._closing) {
+      await this._closing.catch(() => {});
+      queues.set(this.guildId, this); // cleanup unregistered us; we're alive again
+    }
     if (this.connection && this.connection.state.status !== VoiceConnectionStatus.Destroyed) {
       return this.connection;
     }
-    this._voiceStatusBlocked = false; // fresh join: retry status once more
+    unblockChannel(voiceChannel.id); // fresh join: retry status once more
     this.connection = joinVoiceChannel({
       channelId: voiceChannel.id,
       guildId: voiceChannel.guild.id,
@@ -209,7 +192,7 @@ class GuildQueue {
     this.current = null;
     this._stopRequested = true;
     this.player.stop();
-    this.#cleanup();
+    return this.#cleanup();
   }
 
   isPlaying() {
@@ -285,11 +268,11 @@ class GuildQueue {
       if (failed) {
         // stay in the channel for a bit so the user can retry from the
         // dashboard without sending the bot back in
-        this.#setVoiceStatus('');
+        await clearVoiceStatus(this.voiceChannelId);
         if (this._lingerTimer) clearTimeout(this._lingerTimer);
         this._lingerTimer = setTimeout(() => this.#cleanup(), FAIL_LINGER_MS);
       } else {
-        this.#cleanup();
+        await this.#cleanup();
       }
       return;
     }
@@ -407,7 +390,7 @@ class GuildQueue {
     }
     this.currentResource = resource;
     this.player.play(resource);
-    this.#setVoiceStatus(`🎵 ${next.title}`);
+    setVoiceStatus(this.voiceChannelId, `🎵 ${next.title}`);
 
     if (notify && this.textChannel) {
       await this.retireNowPlayingMessage();
@@ -458,8 +441,25 @@ class GuildQueue {
     }, 1500);
   }
 
+  // Tear down the session. Returns a promise because wiping the voice channel
+  // status has to complete *while still connected* — Discord answers 50013 to
+  // a clear sent from outside the channel unless the bot has MANAGE_CHANNELS.
+  // Callers that can't await (button/slash handlers) may safely fire and forget.
   #cleanup() {
-    this.#setVoiceStatus(''); // must run before the connection is destroyed
+    if (this._closing) return this._closing;
+    this._closing = this.#close()
+      .catch((err) => console.error(`[queue ${this.guildId}] cleanup failed:`, err.message))
+      .finally(() => {
+        this._closing = null;
+      });
+    return this._closing;
+  }
+
+  async #close() {
+    // Unregister first: a /play arriving mid-close must not adopt a queue whose
+    // connection is about to be destroyed (ensureConnection re-registers it).
+    if (queues.get(this.guildId) === this) queues.delete(this.guildId);
+
     if (this.currentProcess) {
       try { this.currentProcess.kill(); } catch {}
       this.currentProcess = null;
@@ -472,16 +472,35 @@ class GuildQueue {
       clearTimeout(this._lingerTimer);
       this._lingerTimer = null;
     }
-    if (this.connection && this.connection.state.status !== VoiceConnectionStatus.Destroyed) {
-      this.connection.destroy();
-    }
+
+    const connection = this.connection;
+    await clearVoiceStatus(this.voiceChannelId);
     this.connection = null;
+    if (connection && connection.state.status !== VoiceConnectionStatus.Destroyed) {
+      try { connection.destroy(); } catch {}
+    }
     this.nowPlayingMessage = null;
     this.currentResource = null;
     this.history = [];
     this.autoplay = false;
     this._playedKeys.clear();
-    queues.delete(this.guildId);
+  }
+
+  /** Someone disconnected the bot from voice — end the session. */
+  async handleExternalDisconnect(channelId) {
+    await this.retireNowPlayingMessage();
+    this.tracks = [];
+    this.current = null;
+    this._stopRequested = true;
+    this.player.stop();
+    await clearVoiceStatus(channelId); // the bot is already out: needs MANAGE_CHANNELS
+    await this.#cleanup();
+  }
+
+  /** Someone dragged the bot to another channel — carry the status across. */
+  async handleVoiceMove(fromChannelId, toChannelId) {
+    await clearVoiceStatus(fromChannelId);
+    if (this.current) await setVoiceStatus(toChannelId, `🎵 ${this.current.title}`);
   }
 }
 

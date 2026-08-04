@@ -6,9 +6,10 @@ import { dirname, join } from 'node:path';
 import { startWebServer } from './web/server.js';
 import { handleMusicButton } from './interactions/buttons.js';
 import { handleMusicSelect } from './interactions/menus.js';
-import { peekQueue, setBotClient } from './lib/queue-manager.js';
+import { peekQueue, listQueues } from './lib/queue-manager.js';
 import { flushLikes } from './lib/likes.js';
 import { isGuildDisabled, flushGuildState } from './lib/guild-state.js';
+import { setStatusClient, clearStaleStatuses, clearVoiceStatus } from './lib/voice-status.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -28,10 +29,13 @@ for (const file of await readdir(commandsDir)) {
   client.commands.set(mod.data.name, mod);
 }
 
-client.once(Events.ClientReady, (c) => {
+client.once(Events.ClientReady, async (c) => {
   console.log(`Bot ready as ${c.user.tag}`);
-  setBotClient(c);
+  setStatusClient(c);
   startWebServer(c);
+  // A crash or a deploy restart kills the process before it can wipe the
+  // "now playing" line under a voice channel — clean those up here.
+  await clearStaleStatuses();
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -88,11 +92,41 @@ client.on(Events.MessageCreate, (message) => {
   q.bumpNowPlayingMessage();
 });
 
-// Persist any pending likes before the service restarts (deploys send SIGTERM).
+// The bot was disconnected or dragged to another channel by someone else.
+// Either way the status it left under the old channel has to go — and on a
+// disconnect the session is over, so the queue goes with it.
+client.on(Events.VoiceStateUpdate, (oldState, newState) => {
+  if (oldState.id !== client.user?.id) return;
+  if (!oldState.channelId || newState.channelId === oldState.channelId) return; // mute/deafen
+  const q = peekQueue(oldState.guild.id);
+  // The voice adapter may have already retargeted the connection to the new
+  // channel by the time this fires, so accept either side of the move.
+  const known = q?.voiceChannelId;
+  if (!q || (known !== oldState.channelId && known !== newState.channelId)) return;
+  const handled = newState.channelId
+    ? q.handleVoiceMove(oldState.channelId, newState.channelId)
+    : q.handleExternalDisconnect(oldState.channelId);
+  handled.catch((err) => console.error('[voice-state]', err.message));
+});
+
+// Persist any pending likes before the service restarts (deploys send SIGTERM),
+// and wipe voice channel statuses while the bot is still connected — Discord
+// refuses a clear from outside the channel without MANAGE_CHANNELS.
+let shuttingDown = false;
 for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => {
+  process.on(sig, async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     flushLikes();
     flushGuildState();
+    const clears = listQueues()
+      .map((q) => q.voiceChannelId)
+      .filter(Boolean)
+      .map((channelId) => clearVoiceStatus(channelId));
+    await Promise.race([
+      Promise.allSettled(clears),
+      new Promise((r) => setTimeout(r, 4_000)),
+    ]);
     client.destroy();
     process.exit(0);
   });
