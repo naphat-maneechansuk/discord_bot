@@ -27,8 +27,13 @@ export const data = new SlashCommandBuilder()
 
 // --- Autocomplete: live YouTube search shown while typing ---
 const MIN_CHARS = 3;
-const DEBOUNCE_MS = 300;
+const DEBOUNCE_MS = 150;
 const CACHE_TTL = 5 * 60 * 1000;
+// Discord discards an autocomplete answer after 3s (counted from before the
+// interaction even reaches us) and the client then shows its loading skeleton
+// forever. Budget from the moment we pick it up — debounce included — and
+// answer with something pressable rather than blow the deadline.
+const ANSWER_BUDGET_MS = 2_000;
 const suggestCache = new Map(); // query -> { at, choices }
 const latestQuery = new Map(); // userId -> last focused value (for debounce)
 
@@ -40,6 +45,27 @@ function choiceLabel({ title, channel, duration }) {
   return label;
 }
 
+// Submitting plain text plays its top YouTube hit, so the query itself is a
+// valid choice — that is what the user gets when the search is too slow.
+function topResultChoice(query) {
+  return [{ name: `🔎 Play the top result for “${query}”`.slice(0, 100), value: query.slice(0, 100) }];
+}
+
+// The best cached answer for a query still being typed: an exact hit, else the
+// results of the longest prefix already searched (fresh enough to still fit).
+function cachedChoices(query) {
+  let best = null;
+  for (const [key, entry] of suggestCache) {
+    if (Date.now() - entry.at > CACHE_TTL) {
+      suggestCache.delete(key);
+      continue;
+    }
+    if (!query.startsWith(key)) continue;
+    if (!best || key.length > best.key.length) best = { key, entry };
+  }
+  return best?.entry.choices ?? null;
+}
+
 async function safeRespond(interaction, choices) {
   if (interaction.responded) return;
   // Past the 3s deadline Discord rejects with "Unknown interaction" — ignore it.
@@ -47,6 +73,7 @@ async function safeRespond(interaction, choices) {
 }
 
 export async function autocomplete(interaction) {
+  const startedAt = Date.now();
   const focused = interaction.options.getFocused().trim();
   const userId = interaction.user.id;
 
@@ -55,29 +82,40 @@ export async function autocomplete(interaction) {
     return safeRespond(interaction, []);
   }
 
-  const cached = suggestCache.get(focused);
-  if (cached && Date.now() - cached.at < CACHE_TTL) {
-    return safeRespond(interaction, cached.choices);
+  const exact = suggestCache.get(focused);
+  if (exact && Date.now() - exact.at < CACHE_TTL) {
+    return safeRespond(interaction, exact.choices);
   }
 
   // Debounce: every keystroke is its own interaction, so we let only the
   // value that stays put for DEBOUNCE_MS actually spawn yt-dlp. Intermediate
-  // keystrokes respond empty cheaply instead of piling up searches.
+  // keystrokes reuse what a shorter prefix already found.
   latestQuery.set(userId, focused);
   await new Promise((r) => setTimeout(r, DEBOUNCE_MS));
   if (latestQuery.get(userId) !== focused) {
-    return safeRespond(interaction, []);
+    return safeRespond(interaction, cachedChoices(focused) ?? []);
   }
 
-  let choices = [];
-  try {
-    const tracks = await searchSuggestions(focused, 10);
-    choices = tracks.map((t) => ({ name: choiceLabel(t), value: t.source.slice(0, 100) }));
-    suggestCache.set(focused, { at: Date.now(), choices });
-  } catch {
-    choices = [];
+  // The search keeps running past the deadline: its result still lands in the
+  // cache, so the next keystroke answers instantly instead of stalling again.
+  const search = searchSuggestions(focused, 10)
+    .then((tracks) => {
+      const choices = tracks.map((t) => ({ name: choiceLabel(t), value: t.source.slice(0, 100) }));
+      suggestCache.set(focused, { at: Date.now(), choices });
+      return choices;
+    })
+    .catch(() => null);
+
+  const left = Math.max(0, ANSWER_BUDGET_MS - (Date.now() - startedAt));
+  const timeout = new Promise((r) => setTimeout(() => r(undefined), left));
+  const winner = await Promise.race([search, timeout]);
+  if (winner === undefined) {
+    console.warn(`[autocomplete] search for "${focused}" missed the ${ANSWER_BUDGET_MS}ms budget`);
   }
-  return safeRespond(interaction, choices);
+  return safeRespond(
+    interaction,
+    winner ?? cachedChoices(focused) ?? topResultChoice(focused),
+  );
 }
 
 export async function execute(interaction) {
