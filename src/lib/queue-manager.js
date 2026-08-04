@@ -103,11 +103,45 @@ class GuildQueue {
     return this.connection?.joinConfig?.channelId ?? null;
   }
 
-  async retireNowPlayingMessage() {
-    if (!this.nowPlayingMessage) return;
-    const msg = this.nowPlayingMessage;
-    this.nowPlayingMessage = null;
-    try { await msg.delete(); } catch {}
+  // Every touch of the Now Playing message runs through one chain per guild.
+  // Without it a refresh could land while the bump has the message detached
+  // (nowPlayingMessage briefly null between delete and re-send) and be dropped
+  // silently, leaving the card a step behind the queue.
+  #onCard(fn) {
+    this._cardChain = (this._cardChain ?? Promise.resolve())
+      .then(fn)
+      .catch((err) => console.error(`[card ${this.guildId}]`, err.message));
+    return this._cardChain;
+  }
+
+  #cardPayload() {
+    return nowPlayingPayload(this.current, {
+      paused: this.status() === 'paused',
+      queue: this,
+      progressSeconds: this.getProgressSeconds(),
+    });
+  }
+
+  retireNowPlayingMessage() {
+    return this.#onCard(async () => {
+      if (!this.nowPlayingMessage) return;
+      const msg = this.nowPlayingMessage;
+      this.nowPlayingMessage = null;
+      try { await msg.delete(); } catch {}
+    });
+  }
+
+  /** Replace the card with a fresh one at the bottom of `channel`. */
+  postNowPlayingCard(channel) {
+    return this.#onCard(async () => {
+      if (!this.current) return;
+      const old = this.nowPlayingMessage;
+      this.nowPlayingMessage = null;
+      if (old) {
+        try { await old.delete(); } catch {}
+      }
+      this.nowPlayingMessage = await channel.send(this.#cardPayload());
+    });
   }
 
   async ensureConnection(voiceChannel) {
@@ -393,51 +427,27 @@ class GuildQueue {
     setVoiceStatus(this.voiceChannelId, `🎵 ${next.title}`);
 
     if (notify && this.textChannel) {
-      await this.retireNowPlayingMessage();
-      try {
-        this.nowPlayingMessage = await this.textChannel.send(
-          nowPlayingPayload(next, { queue: this, progressSeconds: 0 }),
-        );
-      } catch {}
+      await this.postNowPlayingCard(this.textChannel);
     }
   }
 
-  async refreshNowPlayingMessage() {
-    if (!this.nowPlayingMessage || !this.current) return;
-    try {
-      await this.nowPlayingMessage.edit(
-        nowPlayingPayload(this.current, {
-          paused: this.status() === 'paused',
-          queue: this,
-          progressSeconds: this.getProgressSeconds(),
-        }),
-      );
-    } catch {}
+  refreshNowPlayingMessage() {
+    return this.#onCard(async () => {
+      if (!this.nowPlayingMessage || !this.current) return;
+      // Rendered here, inside the chain, so it carries the state as of now and
+      // not as of whenever the caller asked.
+      try { await this.nowPlayingMessage.edit(this.#cardPayload()); } catch {}
+    });
   }
 
+  // Someone chatted under the card: move it back to the bottom of the channel.
   bumpNowPlayingMessage() {
     if (!this.nowPlayingMessage || !this.current || !this.textChannel) return;
     if (this._bumpTimer) return;
-    this._bumpTimer = setTimeout(async () => {
+    this._bumpTimer = setTimeout(() => {
       this._bumpTimer = null;
       if (!this.current || !this.textChannel) return;
-      const old = this.nowPlayingMessage;
-      this.nowPlayingMessage = null;
-      if (old) {
-        try { await old.delete(); } catch {}
-      }
-      if (!this.current) return;
-      try {
-        this.nowPlayingMessage = await this.textChannel.send(
-          nowPlayingPayload(this.current, {
-            paused: this.status() === 'paused',
-            queue: this,
-            progressSeconds: this.getProgressSeconds(),
-          }),
-        );
-      } catch (err) {
-        console.error('[bump]', err.message);
-      }
+      this.postNowPlayingCard(this.textChannel);
     }, 1500);
   }
 

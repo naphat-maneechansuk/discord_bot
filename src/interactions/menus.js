@@ -3,7 +3,6 @@ import { getQueue, peekQueue, MAX_QUEUE } from '../lib/queue-manager.js';
 import { resolveTrack } from '../lib/track.js';
 import { getUserLikes } from '../lib/likes.js';
 import {
-  nowPlayingPayload,
   queuedEmbed,
   playlistLoadedEmbed,
   notify,
@@ -62,15 +61,11 @@ async function handleSearchPick(interaction) {
 
   if (!queue.current) {
     await queue.start();
-    await queue.retireNowPlayingMessage();
     await interaction.editReply({
       embeds: [queuedEmbed(track, 1)],
       components: [],
     });
-    const npMsg = await interaction.channel.send(
-      nowPlayingPayload(track, { queue, progressSeconds: 0 }),
-    );
-    queue.nowPlayingMessage = npMsg;
+    await queue.postNowPlayingCard(interaction.channel);
     return;
   }
   await queue.refreshNowPlayingMessage();
@@ -146,15 +141,11 @@ async function handleFriendPick(interaction) {
 
   if (startedEmpty) {
     await queue.start();
-    await queue.retireNowPlayingMessage();
     await interaction.editReply({
       embeds: [playlistLoadedEmbed(added, { started: true, rejected, maxQueue: MAX_QUEUE })],
       components: [],
     });
-    const npMsg = await interaction.channel.send(
-      nowPlayingPayload(queue.current, { queue, progressSeconds: 0 }),
-    );
-    queue.nowPlayingMessage = npMsg;
+    await queue.postNowPlayingCard(interaction.channel);
     return;
   }
   await queue.refreshNowPlayingMessage();
