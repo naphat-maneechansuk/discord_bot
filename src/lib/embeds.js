@@ -5,15 +5,17 @@ import {
   ButtonStyle,
   StringSelectMenuBuilder,
   ContainerBuilder,
-  SectionBuilder,
-  ThumbnailBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
   TextDisplayBuilder,
+  SeparatorBuilder,
   MessageFlags,
 } from 'discord.js';
 import { formatDuration } from './track.js';
 
-// longest song title the one-line "up next" hint keeps before trimming
-const UP_NEXT_TITLE_MAX = 40;
+// how many upcoming tracks the Now Playing card previews inline (full queue
+// still lives behind the 📋 Queue button / /queue)
+const UP_NEXT_PREVIEW = 3;
 
 const PALETTE = [0x5865f2, 0xeb459e, 0xed4245, 0xfaa61a, 0x57f287, 0x9b59b6, 0x3498db, 0xe67e22];
 const COLOR_PAUSED = 0xfaa61a;
@@ -29,31 +31,22 @@ function colorFromSource(source) {
   return PALETTE[hash % PALETTE.length];
 }
 
-function trimTitle(title, max) {
-  const clean = String(title ?? '');
-  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+// Build the inline "Up Next" preview text, or null when the queue is empty.
+function upNextContent(queue) {
+  const tracks = queue?.tracks ?? [];
+  if (tracks.length === 0) return null;
+  const lines = ['**Up Next**'];
+  tracks.slice(0, UP_NEXT_PREVIEW).forEach((t, i) => {
+    const title = t.source ? `[${t.title}](${t.source})` : t.title;
+    lines.push(`\`${i + 1}.\` ${title} \`${formatDuration(t.duration)}\``);
+  });
+  const more = tracks.length - UP_NEXT_PREVIEW;
+  if (more > 0) lines.push(`-# ＋${more} more song${more === 1 ? '' : 's'}`);
+  return lines.join('\n');
 }
 
-// One subtext line closing the card: what plays next (with the queue depth)
-// and who asked for the current track. Null when there is nothing to say.
-function cardFooter(track, queue) {
-  const parts = [];
-  const next = queue?.tracks?.[0];
-  if (next) {
-    const more = queue.tracks.length - 1;
-    const tail = more > 0 ? ` ・ +${more} more` : '';
-    parts.push(`Up next: ${trimTitle(next.title, UP_NEXT_TITLE_MAX)}${tail}`);
-  }
-  if (track.requestedBy) parts.push(`Requested by ${track.requestedBy}`);
-  if (parts.length === 0) return null;
-  return `-# ${parts.join('  ·  ')}`;
-}
-
-// The Now Playing card — one accent-colored Components V2 container kept
-// deliberately short: title + elapsed time beside a small cover thumbnail,
-// the controls, and a single subtext line. Shuffle/loop/queue state is read
-// off the button colors instead of spending lines on it, and the full queue
-// stays behind the 📋 button / /queue.
+// The Now Playing card — a Components V2 message (cover art, track meta,
+// inline Up Next preview, controls, all in one accent-colored container).
 // Returns a ready-to-send/edit payload; callers must not add embeds/content
 // to it (forbidden once MessageFlags.IsComponentsV2 is set).
 export function nowPlayingPayload(track, opts = {}) {
@@ -63,33 +56,47 @@ export function nowPlayingPayload(track, opts = {}) {
     paused ? COLOR_PAUSED : colorFromSource(track.source),
   );
 
-  const title = track.source ? `**[${track.title}](${track.source})**` : `**${track.title}**`;
-  // formatDuration renders 0 as "?:??", which is right for an unknown track
-  // length but wrong for a song that simply just started.
-  const elapsed = progressSeconds > 0 ? formatDuration(progressSeconds) : '0:00';
-  const meta = [track.artist, `\`${elapsed} / ${formatDuration(track.duration)}\``]
-    .filter(Boolean)
-    .join('  ·  ');
-  const header = new TextDisplayBuilder().setContent(
-    `${paused ? '⏸️ **Paused**' : '🎵 **Now Playing**'}\n${title}\n${meta}`,
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(paused ? '### ⏸️ Paused' : '### 🎵 Now Playing'),
   );
 
   if (track.thumbnail) {
-    container.addSectionComponents(
-      new SectionBuilder()
-        .addTextDisplayComponents(header)
-        .setThumbnailAccessory(
-          new ThumbnailBuilder().setURL(track.thumbnail).setDescription('Cover art'),
-        ),
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(
+        new MediaGalleryItemBuilder().setURL(track.thumbnail).setDescription('Cover art'),
+      ),
     );
-  } else {
-    container.addTextDisplayComponents(header);
   }
 
+  const loop =
+    queue?.loopMode === 'track' ? 'Track' : queue?.loopMode === 'queue' ? 'Queue' : 'Off';
+  // formatDuration renders 0 as "?:??", which is right for an unknown track
+  // length but wrong for a song that simply just started.
+  const elapsed = progressSeconds > 0 ? formatDuration(progressSeconds) : '0:00';
+  const meta = [
+    `⏱️ \`${elapsed} / ${formatDuration(track.duration)}\``,
+    `🔀 ${queue?.shuffle ? 'On' : 'Off'}`,
+    `🔁 ${loop}`,
+  ].join('   ');
+  const info = [track.source ? `**[${track.title}](${track.source})**` : `**${track.title}**`];
+  if (track.artist) info.push(`by **${track.artist}**`);
+  info.push(meta);
+  container.addTextDisplayComponents(new TextDisplayBuilder().setContent(info.join('\n')));
+
+  const upNext = upNextContent(queue);
+  if (upNext) {
+    container.addSeparatorComponents(new SeparatorBuilder());
+    container.addTextDisplayComponents(new TextDisplayBuilder().setContent(upNext));
+  }
+
+  container.addSeparatorComponents(new SeparatorBuilder());
   container.addActionRowComponents(...nowPlayingComponents(queue));
 
-  const footer = cardFooter(track, queue);
-  if (footer) container.addTextDisplayComponents(new TextDisplayBuilder().setContent(footer));
+  if (track.requestedBy) {
+    container.addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(`-# Requested by ${track.requestedBy}`),
+    );
+  }
 
   return { components: [container], flags: MessageFlags.IsComponentsV2 };
 }
@@ -376,12 +383,6 @@ export function notify(kind, text) {
   return new EmbedBuilder().setColor(cfg.color).setAuthor({ name: `${cfg.icon} ${text}` });
 }
 
-// Icon-only so the whole control set fits two short rows. A toggle that is on
-// turns green — that is what replaced the old "🔀 On   🔁 Track" status line.
-function iconButton(customId, emoji, style = ButtonStyle.Secondary) {
-  return new ButtonBuilder().setCustomId(customId).setEmoji(emoji).setStyle(style);
-}
-
 function loopButton(loopMode) {
   const map = {
     off: { emoji: '🔁', style: ButtonStyle.Secondary },
@@ -389,21 +390,50 @@ function loopButton(loopMode) {
     queue: { emoji: '🔁', style: ButtonStyle.Success },
   };
   const cfg = map[loopMode] ?? map.off;
-  return iconButton('music:loop', cfg.emoji, cfg.style);
+  return new ButtonBuilder()
+    .setCustomId('music:loop')
+    .setLabel('Loop')
+    .setEmoji(cfg.emoji)
+    .setStyle(cfg.style);
+}
+
+function shuffleButton(on) {
+  return new ButtonBuilder()
+    .setCustomId('music:shuffle')
+    .setLabel('Shuffle')
+    .setEmoji('🔀')
+    .setStyle(on ? ButtonStyle.Success : ButtonStyle.Secondary);
 }
 
 export function controlsRows({ paused = false, loopMode = 'off', shuffle = false, hasHistory = false } = {}) {
   const row1 = new ActionRowBuilder().addComponents(
-    iconButton('music:prev', '⏮️').setDisabled(!hasHistory),
-    iconButton(paused ? 'music:resume' : 'music:pause', paused ? '▶️' : '⏸️'),
-    iconButton('music:skip', '⏭️'),
-    iconButton('music:stop', '⏹️', ButtonStyle.Danger),
-    iconButton('music:like', '❤️'),
+    new ButtonBuilder()
+      .setCustomId(paused ? 'music:resume' : 'music:pause')
+      .setLabel(paused ? 'Resume' : 'Pause')
+      .setEmoji(paused ? '▶️' : '⏸️')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('music:prev')
+      .setLabel('Prev')
+      .setEmoji('⏮️')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(!hasHistory),
+    new ButtonBuilder()
+      .setCustomId('music:skip')
+      .setLabel('Skip')
+      .setEmoji('⏭️')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('music:stop')
+      .setLabel('Stop')
+      .setEmoji('⏹️')
+      .setStyle(ButtonStyle.Danger),
   );
   const row2 = new ActionRowBuilder().addComponents(
-    iconButton('music:shuffle', '🔀', shuffle ? ButtonStyle.Success : ButtonStyle.Secondary),
+    shuffleButton(shuffle),
     loopButton(loopMode),
-    iconButton('music:queue', '📋', ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('music:queue').setLabel('Queue').setEmoji('📋').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('music:like').setLabel('Like').setStyle(ButtonStyle.Secondary),
   );
   return [row1, row2];
 }
